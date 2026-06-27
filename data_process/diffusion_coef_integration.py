@@ -2468,6 +2468,7 @@ def powerlaw_1_log10(r, h_D, D):
     # return np.log10( h_D/(4./3*np.pi) ) + np.log10(r)*(D-3)
     return np.log10( h_D/(4./3*np.pi) * r**(D-3) )
 
+# this is discard
 def fit_fractal_dimension(radii_list, inside_counts_list, suffix="suffix", is_plot=True):
     """
     Step3: Fit the power law function to get the fractal dimension.

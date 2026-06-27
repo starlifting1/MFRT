@@ -345,20 +345,27 @@ def fit_fractal_dimension(radii_list, inside_counts_list, suffix="suffix", is_pl
     if savepath is None:
         savepath = "../data/examples/"
     if is_plot:
+        fontsize = 20
+
         plt.figure(figsize=(10, 6))
         mean_density_log10_fit_at = powerlaw_1_log10(radii, *popt)
-        # plt.scatter(radii, 10.**mean_density_log10, label='Data', color='blue')
-        # plt.plot(radii, 10.**mean_density_log10_fit_at, label='Fit: $h_D$={:.2f}, $D$={:.2f}'.format(*popt), color='red')
-        # plt.xlabel('Radius')
-        # plt.ylabel('Mean Density')
-        # plt.xscale('log')
-        # plt.yscale('log')
-        plt.scatter(np.log10(radii), mean_density_log10, label='Data', color='blue')
-        plt.plot(np.log10(radii), mean_density_log10_fit_at, label='Fit: $h_D$={:.2f}, $D$={:.2f}'.format(*popt), color='red')
-        plt.xlabel('log10 Radius')
-        plt.ylabel('log10 Mean Density')
-        plt.legend()
+
+        plt.scatter(np.log10(radii), mean_density_log10, label='Measured density', color='blue')
+        plt.plot(
+            np.log10(radii), 
+            mean_density_log10_fit_at, 
+            label=r'Fit: $h_\mathrm{{frac}}$={:.2f}, $D_\mathrm{{frac}}$={:.2f}'.format(*popt), 
+            color='red', 
+        )
+
+        plt.xlabel('log10 radius, kpc', fontsize=fontsize)
+        # plt.xlabel('$\log_{10}(r/\mathrm{kpc})$', fontsize=fontsize)
+        # plt.ylabel('log10 mean density', fontsize=fontsize)
+        plt.ylabel('log10 shell-averaged count density', fontsize=fontsize)
+        plt.tick_params(axis="both", labelsize=fontsize)
+        plt.legend(fontsize=fontsize)
         plt.grid(True)
+
         # plt.title('Fractal Dimension Fit')
         # plt.show()
         plt.savefig("{}./fractal_dimension_fit_{}.eps".format(savepath, suffix), format="eps", bbox_inches='tight')
@@ -366,7 +373,10 @@ def fit_fractal_dimension(radii_list, inside_counts_list, suffix="suffix", is_pl
     return popt
 
 import warnings
-def calculate_mean_neareast_count(pos, r_min=None, r_max=None, n_radii=None, suffix="suffix", rate_calculate=None):
+def calculate_mean_neareast_count(
+    pos, r_min=None, r_max=None, n_radii=None, suffix="suffix", rate_calculate=None,
+    is_plot=True, save_path=None
+):
     N = len(pos)
     mean_radius = ads.get_mean_radius(pos, is_center=True)
     if r_max is None:
@@ -399,12 +409,15 @@ def calculate_mean_neareast_count(pos, r_min=None, r_max=None, n_radii=None, suf
 
     radii, inside_counts = inside_count_with_radius(pos, pos_targets, r_min=r_min, r_max=r_max, n_radii=n_radii)
     # ads.DEBUG_PRINT_V(0, radii, inside_counts, "radii")
-    popt = fit_fractal_dimension(radii, inside_counts, suffix=suffix)
+    popt = fit_fractal_dimension(
+        radii, inside_counts, suffix=suffix, is_plot=is_plot, savepath=save_path
+    )
     h_frac, Dim_frac = popt
     # print("Optimal Parameters: h_frac = {:.2f}, Dim_frac = {:.2f}".format(h_frac, Dim_frac))
     return h_frac, Dim_frac
 
 def calculate_mean_neareast_count_load(radii, inside_counts, save_path, suffix="suffix", is_plot=True):
+    # using
     # data = np.loadtxt(filename, dtype=float)
     # radii, inside_counts = data[:,0], data[:,1]
     # ads.DEBUG_PRINT_V(0, radii, inside_counts, "radii")

@@ -295,7 +295,7 @@ def plot_velocity_DF_contour_compare(
     grid_coords = np.column_stack([mg1.ravel(), mg2.ravel(), mg3.ravel()])
 
     ## plot
-    fontsize = 14
+    fontsize = 30.
     figsize = (20, 15)
 
     for idx, vel_data in enumerate(datasets):
@@ -340,7 +340,7 @@ def plot_velocity_DF_contour_compare(
             )
             ax.set_aspect('equal')
             if pos_or_vel == "vel":
-                ax.set_title(f"{labels[idx]}, $v_z$ = {grid_z[k]:.2f} km/s", fontsize=fontsize)
+                ax.set_title(f"$v_z$ = {grid_z[k]:.2f} km/s", fontsize=fontsize)
                 ax.set_xlabel("$v_x, km/s$", fontsize=fontsize)
                 ax.set_ylabel("$v_y, km/s$", fontsize=fontsize)
             else:
@@ -453,7 +453,7 @@ def plot_normalized_pdf_components(Diffu_data_components, label_list, Diffu_0, s
         plt.xlabel(r"diffusion $D_\mathrm{pos}$, $\mathrm{(km/s)^3/kpc}$", fontsize=fontsize)
     plt.ylabel(r"distribution $f$, $\mathrm{kpc/(km/s)^3}$", fontsize=fontsize)
     
-    plt.legend(fontsize=fontsize*0.6, loc=0)
+    plt.legend(fontsize=fontsize*0.8, loc=0)
     plt.tick_params(which='major', length=0, labelsize=fontsize * 1.)
     plt.tight_layout()
     if pos_or_vel == "vel":
@@ -513,7 +513,7 @@ def plot_normalized_pdf_from_eachpoints_histogram(Diffu_data, Diffu_0, suffix="s
         plt.xlabel(r"diffusion $D_\mathrm{pos}$, $\mathrm{(km/s)^3/kpc}$", fontsize=fontsize)
     plt.ylabel(r"distribution $f$, $\mathrm{kpc/(km/s)^3}$", fontsize=fontsize)
     
-    plt.legend(fontsize=fontsize*0.6, loc=0)
+    plt.legend(fontsize=fontsize*0.8, loc=0)
     plt.tick_params(which='major', length=0, labelsize=fontsize * 1.)
     plt.tight_layout()
     if pos_or_vel == "vel":
@@ -588,7 +588,7 @@ def plot_normalized_pdf_from_eachpoints_histogram_vel_data(
             plt.xlabel(r"diffusion $D_\mathrm{pos}$, $\mathrm{(km/s)^3/kpc}$", fontsize=fontsize)
         plt.ylabel(r"distribution $f$, $\mathrm{kpc/(km/s)^3}$", fontsize=fontsize)
         
-        plt.legend(fontsize=fontsize*0.6, loc=0)
+        plt.legend(fontsize=fontsize*0.8, loc=0)
         plt.tick_params(which='major', length=0, labelsize=fontsize * 1.)
         plt.tight_layout()
         if pos_or_vel == "vel":
@@ -655,7 +655,7 @@ def plot_normalized_pdf_from_eachpoints_histogram_vel_data(
         else:
             ax2.set_xlabel(r"diffusion $D_\mathrm{pos}$, $\mathrm{(km/s)^3/kpc}$", fontsize=fontsize)
             ax2.set_ylabel(r"distribution $f$, $\mathrm{kpc/(km/s)^3}$", fontsize=fontsize)
-        ax2.legend(fontsize=fontsize*0.6, loc=0)
+        ax2.legend(fontsize=fontsize*0.8, loc=0)
         ax2.tick_params(which='major', length=0, labelsize=fontsize)
         
         plt.tight_layout()
@@ -714,7 +714,7 @@ def plot_normalized_pdf_from_eachpoints_KDE(Diffu_data, Diffu_0, suffix="suffix"
         plt.xlabel(r"diffusion $D_\mathrm{pos}$, $\mathrm{(km/s)^3/kpc}$", fontsize=fontsize)
     plt.ylabel(r"distribution $f$, $\mathrm{kpc/(km/s)^3}$", fontsize=fontsize)
     
-    plt.legend(fontsize=fontsize*0.6, loc=0)
+    plt.legend(fontsize=fontsize*0.8, loc=0)
     plt.tick_params(which='major', length=0, labelsize=fontsize * 1.)
     plt.tight_layout()
     if pos_or_vel == "vel":
@@ -767,7 +767,7 @@ def plot_normalized_pdf_from_percentile(data, mean_val, median_val, Diffu_0, suf
         plt.xlabel(r"Diffusion $D_\mathrm{pos}$, $\mathrm{(km/s)^3/kpc}$", fontsize=fontsize)
     plt.ylabel(r"Distribution $f$, $\mathrm{kpc/(km/s)^3}$", fontsize=fontsize)
 
-    plt.legend(fontsize=fontsize * 0.6, loc=0)
+    plt.legend(fontsize=fontsize*0.8, loc=0)
     plt.tick_params(which='major', length=0, labelsize=fontsize * 1.)
     plt.tight_layout()
     if pos_or_vel == "vel":
@@ -927,13 +927,13 @@ def plot_relaxation_time_with_N_and_dim_pos(
     plt.xscale("log")
     plt.yscale("log")
     # plt.title(r"eta_relax versus N", fontsize=fontsize)
-    plt.xlabel(r"particle count $N$", fontsize=fontsize)
-    plt.ylabel(r"relaxation time ratio $\eta$", fontsize=fontsize)
-    plt.legend(fontsize=fontsize*0.36, loc=0)
+    plt.xlabel(r"Particle count $N$", fontsize=fontsize)
+    plt.ylabel(r"Relaxation time ratio $\eta_r$", fontsize=fontsize)
+    plt.legend(fontsize=fontsize*0.8, loc=0)
     plt.tick_params(which='major', length=0, labelsize=fontsize*0.8) #size of the number characters
     plt.tight_layout()
 
-    plt.savefig("../data/examples_pos/relaxation_time_with_N_and_dim_{}.eps".format(suffix), format="eps", bbox_inches='tight')
+    plt.savefig("../data/examples_pos/relaxation_time_with_N_and_dim_{}_with_ref.eps".format(suffix), format="eps", bbox_inches='tight')
     plt.close()
     print("Saved fig of relaxation_time_with_N_and_dim_pos.")
     return 0
@@ -983,7 +983,7 @@ def plot_relaxation_time_with_N_and_dim_vel(
     # for j in np.arange(N_dimlb_plot):
     #     plt.plot(N_particles_arr, eta_N_arr_count[j], "-.", label="eta_count, Dim_frac={:.2f}".format(Dim_frac_lb[j]), color=colorj[j], lw=pointsize*0.5)
 
-    plt.plot(N_particles_arr, eta_N_arr_referencevalue, "-", label="eta_count, referencevalue", color="k", lw=pointsize*0.5)
+    plt.plot(N_particles_arr, eta_N_arr_referencevalue, "-", label="by referencevalue", color="k", lw=pointsize*0.5)
     
     dldl = [
         diffueff_iso_median_list, diffueff_aniso_median_list, diffueff_tail_median_list, 
@@ -1002,7 +1002,7 @@ def plot_relaxation_time_with_N_and_dim_vel(
         for i in np.arange(N_N_list):
             eta_diffu_list[i] = eta_ralaxaiton_time_ratio(diffueff_list[i], R0, v0)
         # ads.DEBUG_PRINT_V(1, diffueff_list, eta_diffu_list, "diffur")
-        plt.scatter(N_list, eta_diffu_list, label="eta_diffu by median of {}".format(pos_type_name), color=color[pos_type_name], s=pointsize*60., marker="*")
+        plt.scatter(N_list, eta_diffu_list, label="by median of {}".format(pos_type_name), color=color[pos_type_name], s=pointsize*60., marker="*")
     
     # dldl = [
     #     diffueff_iso_mean_list, diffueff_aniso_mean_list, diffueff_tail_mean_list, 
@@ -1021,17 +1021,17 @@ def plot_relaxation_time_with_N_and_dim_vel(
     #     for i in np.arange(N_N_list):
     #         eta_diffu_list[i] = eta_ralaxaiton_time_ratio(diffueff_list[i], R0, v0)
     #     # ads.DEBUG_PRINT_V(1, diffueff_list, eta_diffu_list, "diffur")
-    #     plt.scatter(N_list, eta_diffu_list, label="eta_diffu by meanvalue of {}".format(pos_type_name), color=color[pos_type_name], s=pointsize*60., marker="+")
+    #     plt.scatter(N_list, eta_diffu_list, label="by meanvalue of {}".format(pos_type_name), color=color[pos_type_name], s=pointsize*60., marker="+")
     
     plt.xscale("log")
     plt.yscale("log")
     # plt.title(r"eta_relax versus N", fontsize=fontsize)
-    plt.xlabel(r"particle count $N$", fontsize=fontsize)
-    plt.ylabel(r"relaxation time ratio $\eta$", fontsize=fontsize)
-    plt.legend(fontsize=fontsize*0.36, loc=0)
+    plt.xlabel(r"Particle count $N$", fontsize=fontsize)
+    plt.ylabel(r"Relaxation time ratio $\eta_v$", fontsize=fontsize)
+    plt.legend(fontsize=fontsize*0.8, loc=0)
     plt.tick_params(which='major', length=0, labelsize=fontsize*0.8) #size of the number characters
     plt.tight_layout()
-    save_file = "../data/examples_vel/relaxation_time_with_N_and_dim_{}.eps".format(suffix)
+    save_file = "../data/examples_vel/relaxation_time_with_N_and_dim_{}_with_ref.eps".format(suffix)
     fig_tmp = plt.gcf()
     fig_tmp.savefig(save_file, format="eps", bbox_inches='tight')
     plt.close()
@@ -1079,14 +1079,20 @@ def zeta_linear_fitting_outer(counts, zeta, counts_targets, save_path, suffix="s
 
     # (4) Plot
     plt.figure(figsize=(6,5))
+    pointsize = 2.
+    fontsize = 2.
+
     plt.scatter(counts, zeta, label="data", marker='o', s=40, alpha=0.8)
     plt.scatter(counts_targets, zeta_targets, label="extrapolated", marker='x', s=60, c='C1')
-    plt.plot(N_grid, zeta_grid,  label=f"fit: ζ={a:.3f} ln N+{b:.3f}", lw=2, c='C2')
+    plt.plot(N_grid, zeta_grid,  label=f"fit: ζ={a:.3f} ln N+{b:.3f}", lw=pointsize, c='C2')
 
     plt.xscale('log')
     # plt.yscale('log')
     plt.xlabel(r"Particle count $N$")
-    plt.ylabel(r"Amplification ratio $\zeta$")
+    if suffix=="pos":
+        plt.ylabel(r"Position-space enhancement ratio $\zeta_\mathrm{pos}$", fontsize=fontsize)
+    else:
+        plt.ylabel(r"Velocity-space enhancement ratio $\zeta_\mathrm{vel}$", fontsize=fontsize)
     plt.legend()
 
     plt.tight_layout()

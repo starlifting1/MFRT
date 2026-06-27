@@ -27,9 +27,9 @@ def plot_compare_tree(filename, suffix="suffix"):
     # error_tree = np.sqrt( np.sum( (Diffu_tree/Diffu_direct-1.)**2 ) ) / len(Diffu_tree)
     # ads.DEBUG_PRINT_V(0, error_tree, "error_tree")
 
-    fontsize = 40
+    fontsize = 30
     pointsize = 3.2
-    figsize = (20, 15)  # For 3x3 layout
+    figsize = (10, 7)
     dpi = None
     plt.figure(figsize=figsize, dpi=dpi)
 
@@ -40,8 +40,10 @@ def plot_compare_tree(filename, suffix="suffix"):
     # plt.xscale("log")
     plt.yscale("log")
     # plt.title(r"diffusion coefficient DF on position space", fontsize=fontsize)
-    plt.xlabel(r"particles indices $i$", fontsize=fontsize)
+    plt.xlabel(r"Particles indices $i$", fontsize=fontsize)
     plt.ylabel(r"Diffusion $D_\mathrm{main}$, $\mathrm{(km/s)^3/kpc}$", fontsize=fontsize)
+    plt.tick_params(axis="both", which="major", labelsize=fontsize*0.6)
+    
     plt.tight_layout()
     plt.savefig("../data/examples_pos/diffur_compare_tree_{}.eps".format(suffix), format="eps", bbox_inches='tight')
     plt.close()
@@ -155,6 +157,7 @@ def plot_normalized_df_from_percentile(filename, Diffu_represent, suffix):
     print("Saved fig of diffur_percentile.")
     return 0
 
+# this is discard
 def plot_relaxation_time_with_N_and_dim_pos(
     R0, v0, M_total, Dim_frac_lb, 
     diffur_uniform_median_list, diffur_uniform_meanvalue_list, 
@@ -551,15 +554,15 @@ def plot_velocity_DF_contour_compare(
 ## main
 if __name__ == '__main__':
 
-    # #### samples for pos
-    # ## 1. compare_tree
-    # suffix = "noised14_N100000"
-    # filename = "../data/samples_simulated/snapshot_compare_tree_Diffur_read0_{}.txt".format(suffix)
-    # plot_compare_tree(filename, suffix)
-    # filename_Diffu_represent = "../data/samples_simulated/snapshot_fractal_Diffustatistics_read0_noised14_N100000.txt"
-    # Diffu_represent = np.loadtxt(filename_Diffu_represent)
-    # print(Diffu_represent)
-    # plot_diffur(filename, Diffu_represent[1], suffix)
+    #### samples for pos
+    ## 1. compare_tree
+    suffix = "noised14_N100000"
+    filename = "../data/samples_simulated/snapshot_compare_tree_Diffur_read0_{}.txt".format(suffix)
+    plot_compare_tree(filename, suffix)
+    filename_Diffu_represent = "../data/samples_simulated/snapshot_fractal_Diffustatistics_read0_noised14_N100000.txt"
+    Diffu_represent = np.loadtxt(filename_Diffu_represent)
+    print(Diffu_represent)
+    plot_diffur(filename, Diffu_represent[1], suffix)
 
     # ## 2. diffu_simulated
     # suffix = "snapshot_080_N1000000"
@@ -590,105 +593,105 @@ if __name__ == '__main__':
     # )
     # data_tmp = None
 
-    ## 4. diffu_with_N_and_dim
-    R0 = dbc.R0_scale
-    Rm = R0/dbc.lambda3
-    M_total = dbc.M_total_gal_1e10MSun
-    v0 = np.sqrt(dbc.G*M_total/dbc.frac_mass/R0)
+    # ## 4. diffu_with_N_and_dim
+    # R0 = dbc.R0_scale
+    # Rm = R0/dbc.lambda3
+    # M_total = dbc.M_total_gal_1e10MSun
+    # v0 = np.sqrt(dbc.G*M_total/dbc.frac_mass/R0)
     
-    N_list = np.array([10000, 100000, 1000000, 10000000, 100000000, 1000000000])
-    hu = 0.16
-    du = 2.27 #??
-    hn = 1.14
-    dn = 1.49
-    h0 = None
-    d0 = 3.
-    Dim_frac_lb = [dn, du, d0]
-    diffur_median = np.zeros(len(N_list))
-    diffur_mean = np.zeros(len(N_list))
-    diffur_median_noised = np.zeros(len(N_list))
-    diffur_mean_noised = np.zeros(len(N_list))
-    diffur_referencevalue = np.zeros(len(N_list))
+    # N_list = np.array([10000, 100000, 1000000, 10000000, 100000000, 1000000000])
+    # hu = 0.16
+    # du = 2.27 #??
+    # hn = 1.14
+    # dn = 1.49
+    # h0 = None
+    # d0 = 3.
+    # Dim_frac_lb = [dn, du, d0]
+    # diffur_median = np.zeros(len(N_list))
+    # diffur_mean = np.zeros(len(N_list))
+    # diffur_median_noised = np.zeros(len(N_list))
+    # diffur_mean_noised = np.zeros(len(N_list))
+    # diffur_referencevalue = np.zeros(len(N_list))
 
-    diffur_simulated_list = None
-    diffur_referencevalue_list = None
-    diffur_referencevalue_list = [
-        N_list, 
-        diffur_referencevalue, 
-        hn, 
-        dn, 
-        "pos_referencevalue", 
-    ]
+    # diffur_simulated_list = None
+    # diffur_referencevalue_list = None
+    # diffur_referencevalue_list = [
+    #     N_list, 
+    #     diffur_referencevalue, 
+    #     hn, 
+    #     dn, 
+    #     "pos_referencevalue", 
+    # ]
 
-    diffur_uniform_median_list = None
-    diffur_uniform_meanvalue_list = None
-    for (i, N) in enumerate(N_list):
-        filename = "../data/samples_simulated/snapshot_fractal_Diffustatistics_read0_noised0_N{}.txt".format(N)
-        data = np.loadtxt(filename)
-        diffur_referencevalue[i] = data[1]*1.
-        diffur_mean[i] = data[2]*1.
-        diffur_median[i] = data[3]*1.
-        # print(i, N, diffur_median[i], "uniform")
+    # diffur_uniform_median_list = None
+    # diffur_uniform_meanvalue_list = None
+    # for (i, N) in enumerate(N_list):
+    #     filename = "../data/samples_simulated/snapshot_fractal_Diffustatistics_read0_noised0_N{}.txt".format(N)
+    #     data = np.loadtxt(filename)
+    #     diffur_referencevalue[i] = data[1]*1.
+    #     diffur_mean[i] = data[2]*1.
+    #     diffur_median[i] = data[3]*1.
+    #     # print(i, N, diffur_median[i], "uniform")
 
-    diffur_uniform_median_list = [
-        N_list, 
-        diffur_median, #note: a pointer, need to copy
-        hu, 
-        du, 
-        "pos_uniform", 
-    ]
-    diffur_uniform_meanvalue_list = [
-        N_list, 
-        diffur_mean, 
-        hu, 
-        du, 
-        "pos_uniform", 
-    ]
+    # diffur_uniform_median_list = [
+    #     N_list, 
+    #     diffur_median, #note: a pointer, need to copy
+    #     hu, 
+    #     du, 
+    #     "pos_uniform", 
+    # ]
+    # diffur_uniform_meanvalue_list = [
+    #     N_list, 
+    #     diffur_mean, 
+    #     hu, 
+    #     du, 
+    #     "pos_uniform", 
+    # ]
 
-    diffur_noised_median_list = None
-    diffur_noised_meanvalue_list = None
-    for (i, N) in enumerate(N_list):
-        filename = "../data/samples_simulated/snapshot_fractal_Diffustatistics_read0_noised14_N{}.txt".format(N)
-        data = np.loadtxt(filename)
-        diffur_referencevalue[i] = data[1]*1.
-        diffur_mean_noised[i] = data[2]*1.
-        diffur_median_noised[i] = data[3]*1.
-        # print(i, N, diffur_median[i], "noised")
+    # diffur_noised_median_list = None
+    # diffur_noised_meanvalue_list = None
+    # for (i, N) in enumerate(N_list):
+    #     filename = "../data/samples_simulated/snapshot_fractal_Diffustatistics_read0_noised14_N{}.txt".format(N)
+    #     data = np.loadtxt(filename)
+    #     diffur_referencevalue[i] = data[1]*1.
+    #     diffur_mean_noised[i] = data[2]*1.
+    #     diffur_median_noised[i] = data[3]*1.
+    #     # print(i, N, diffur_median[i], "noised")
 
-    diffur_noised_median_list = [
-        N_list, 
-        diffur_median_noised, 
-        hn, 
-        dn, 
-        "pos_uniform_noise", 
-    ]
-    diffur_noised_meanvalue_list = [
-        N_list, 
-        diffur_mean_noised, 
-        hn, 
-        dn, 
-        "pos_uniform_noise", 
-    ]
-    # ads.DEBUG_PRINT_V(0, diffur_median, diffur_mean, "diffur")
+    # diffur_noised_median_list = [
+    #     N_list, 
+    #     diffur_median_noised, 
+    #     hn, 
+    #     dn, 
+    #     "pos_uniform_noise", 
+    # ]
+    # diffur_noised_meanvalue_list = [
+    #     N_list, 
+    #     diffur_mean_noised, 
+    #     hn, 
+    #     dn, 
+    #     "pos_uniform_noise", 
+    # ]
+    # # ads.DEBUG_PRINT_V(0, diffur_median, diffur_mean, "diffur")
 
-    suffix = "modified_pos"
-    plot_relaxation_time_with_N_and_dim_pos(
-        R0, v0, M_total, Dim_frac_lb, 
-        diffur_uniform_median_list=diffur_uniform_median_list, 
-        diffur_uniform_meanvalue_list=diffur_uniform_meanvalue_list, 
-        diffur_noised_median_list=diffur_noised_median_list, 
-        diffur_noised_meanvalue_list=diffur_noised_meanvalue_list, 
-        diffur_referencevalue_list=diffur_referencevalue_list, 
-        diffur_simulated_list=diffur_simulated_list, 
-        suffix=suffix
-    )
+    # suffix = "modified_pos"
+    # plot_relaxation_time_with_N_and_dim_pos(
+    #     R0, v0, M_total, Dim_frac_lb, 
+    #     diffur_uniform_median_list=diffur_uniform_median_list, 
+    #     diffur_uniform_meanvalue_list=diffur_uniform_meanvalue_list, 
+    #     diffur_noised_median_list=diffur_noised_median_list, 
+    #     diffur_noised_meanvalue_list=diffur_noised_meanvalue_list, 
+    #     diffur_referencevalue_list=diffur_referencevalue_list, 
+    #     diffur_simulated_list=diffur_simulated_list, 
+    #     suffix=suffix
+    # )
 
-    path_load = "../data/samples_pos/"
-    path_save = "../data/examples_pos/"
-    zeta_pos = diffur_median_noised/diffur_median
-    zeta_versus_N = np.hstack((np.array([N_list]).T, np.array([zeta_pos]).T))
-    np.savetxt(path_save+"zeta_pos.txt", zeta_versus_N)
-    ads.DEBUG_PRINT_V(0, zeta_versus_N, "zeta_pos")
+    # path_load = "../data/samples_pos/"
+    # path_save = "../data/examples_pos/"
+    # zeta_pos = diffur_median_noised/diffur_median
+    # zeta_versus_N = np.hstack((np.array([N_list]).T, np.array([zeta_pos]).T))
+    # np.savetxt(path_save+"zeta_pos.txt", zeta_versus_N)
+    # ads.DEBUG_PRINT_V(0, zeta_versus_N, "zeta_pos")
 
 
 

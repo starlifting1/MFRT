@@ -9,15 +9,33 @@
 #include "PerlinNoise.hpp" // Include the siv::PerlinNoise header
 #include "diffu.h"
 
-void Perlin_motion(const std::vector<PositionSpace>& positions, PrecisionSetting scale = 0.1f, int octaves = 4, PrecisionSetting step_size = 0.5f);
-void Perlin_motion(const std::vector<VelocitySpace>& positions, PrecisionSetting scale = 0.1f, int octaves = 4, PrecisionSetting step_size = 0.5f);
+void Perlin_motion(
+    std::vector<PositionSpace>& positions, PrecisionSetting scale = 0.1f, int octaves = 4,
+    PrecisionSetting step_size = 0.5f, unsigned int seed = 123456u,
+    PrecisionSetting persistence = 0.5f, PrecisionSetting lacunarity = 2.0f
+);
+void Perlin_motion(
+    std::vector<VelocitySpace>& positions, PrecisionSetting scale = 0.1f, int octaves = 4,
+    PrecisionSetting step_size = 0.5f, unsigned int seed = 123456u,
+    PrecisionSetting persistence = 0.5f, PrecisionSetting lacunarity = 2.0f
+);
 void write_samples_to_binary(const std::vector<PositionSpace>& samples, const std::string& filename);
 void read_binary_and_convert_to_txt(const std::string& binary_file, const std::string& txt_file, std::vector<PositionSpace>& positions, bool is_update_samples=false);
 
 void generate_spherical_samples(size_t N_particles, std::vector<PositionSpace>& samples);
 void generate_and_save_samples(size_t N_particles, PrecisionSetting radius, std::vector<PositionSpace>& samples, const std::string& binary_file, const std::string& txt_file);
 void generate_noised_samples(std::vector<PositionSpace>& positions, int N_iter=14);
+void generate_noised_samples(
+    std::vector<PositionSpace>& positions, int N_iter, PrecisionSetting scale, int octaves,
+    PrecisionSetting step_size, unsigned int seed = 123456u,
+    PrecisionSetting persistence = 0.5f, PrecisionSetting lacunarity = 2.0f
+);
 void generate_noised_samples(std::vector<VelocitySpace>& positions, int N_iter=14);
+void generate_noised_samples(
+    std::vector<VelocitySpace>& positions, int N_iter, PrecisionSetting scale, int octaves,
+    PrecisionSetting step_size, unsigned int seed = 123456u,
+    PrecisionSetting persistence = 0.5f, PrecisionSetting lacunarity = 2.0f
+);
 
 /*  Function to randomly select unique targets without replacement.
 */

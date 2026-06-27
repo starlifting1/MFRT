@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
 """
-Fit a combined core-tail speed DF model to 1D speed PDF data,
+Fit a composite core-tail speed DF model to 1D speed PDF data,
 using mpfit for non-linear least squares. Compares the fitted
 model with the PDF estimated via kNN-KDE.
 """
@@ -68,23 +68,23 @@ def f_comb(v, par):
     A_pl   = par[5]
     epsilon= par[6]
     
-    # Gaussian core
+    # gaussian core
     # f_G = 0.
     f_G = (2.0*np.pi * sigma**2)**(-1.5) * np.exp(-0.5 * (v/sigma)**2)
     
-    # Power-law tail (note: translated by epsilon)
+    # power-law tail (note: translated by epsilon)
     # f_pl = 0.
     # f_pl = A_pl * ( 1 + (v/vc)**2 )**(-gamma)
     f_pl = A_pl / vc**3 * ( epsilon + (v/vc)**2 )**(-gamma)
     
-    # Blending function: logistic form
+    # blending function: logistic form
     # g = 0.5
     g = g_func(v, k, v1)
     
-    # Combined model
-    f_combined = 4.0*np.pi * v**2 * ( f_G * (1-g) + f_pl * g )
+    # composite model
+    f_composite = 4.0*np.pi * v**2 * ( f_G * (1-g) + f_pl * g )
     
-    return f_combined
+    return f_composite
 
 def model_resid(par, fjac=None, x=None, y=None):
     """Residual function for mpfit. Returns model - data."""
@@ -103,7 +103,7 @@ def model_resid_powerlaw(par, fjac=None, x=None, y=None):
 
 def fit_speed_df_mpfit(v_grid, pdf_data, func_model, quiet=0):
     """
-    Fit the combined speed DF model to the observed PDF data using mpfit.
+    Fit the composite speed DF model to the observed PDF data using mpfit.
     The free parameter vector is: [sigma, vc, gamma, k, v1, A_pl, epsilon].
     
     Returns:
@@ -134,7 +134,7 @@ def fit_speed_df_mpfit(v_grid, pdf_data, func_model, quiet=0):
 
 def fit_speed_df_mpfit_Gaussian(v_grid, pdf_data, func_model, quiet=0):
     """
-    Fit the combined speed DF model to the observed PDF data using mpfit.
+    Fit the composite speed DF model to the observed PDF data using mpfit.
     The free parameter vector is: [sigma, vc, gamma, k, v1, A_pl, epsilon].
     
     Returns:
@@ -158,7 +158,7 @@ def fit_speed_df_mpfit_Gaussian(v_grid, pdf_data, func_model, quiet=0):
 
 def fit_speed_df_mpfit_powerlaw(v_grid, pdf_data, func_model, quiet=0):
     """
-    Fit the combined speed DF model to the observed PDF data using mpfit.
+    Fit the composite speed DF model to the observed PDF data using mpfit.
     The free parameter vector is: [sigma, vc, gamma, k, v1, A_pl, epsilon].
     
     Returns:
@@ -184,7 +184,7 @@ def fit_speed_df_mpfit_powerlaw(v_grid, pdf_data, func_model, quiet=0):
 
 def fit_and_plot_speed_df(v_grid, pdf_data, save_path):
     """
-    Fit the combined speed DF model to the observed 1D PDF and plot the results.
+    Fit the composite speed DF model to the observed 1D PDF and plot the results.
     
     Parameters:
        v_grid   : 1D numpy array of speeds.
@@ -196,7 +196,6 @@ def fit_and_plot_speed_df(v_grid, pdf_data, save_path):
        mp_result: mpfit result object.
     """
     quiet = 1
-
     model = model_resid_Gaussian
     bestfit, mp_result = fit_speed_df_mpfit_Gaussian(v_grid, pdf_data, model, quiet=quiet)
     print("Best-fit parameters of Gaussian:")
@@ -217,7 +216,7 @@ def fit_and_plot_speed_df(v_grid, pdf_data, save_path):
     bestfit, mp_result = fit_speed_df_mpfit(v_grid, pdf_data, model, quiet=quiet)
     # bestfit[4] *= 0.5 #debug
     # bestfit[5] *= 2.0
-    print("Best-fit parameters of combined:")
+    print("Best-fit parameters of composite:")
     print("sigma =", bestfit[0])
     print("vc =", bestfit[1])
     print("gamma =", bestfit[2])
@@ -245,27 +244,30 @@ def fit_and_plot_speed_df(v_grid, pdf_data, save_path):
     frac_total = frac_G+frac_pl
 
     fig, ax = plt.subplots(2, 1, figsize=(10, 10))
+    fontsize = 20
 
     # Subfigure 1: Plot each curve vs v.
     ax[0].plot(v_grid, frac_G, 'g-', lw=2, label="Gaussian Core Fraction")
     ax[0].plot(v_grid, frac_pl, 'b-', lw=2, label="Power-law Tail Fraction")
     ax[0].plot(v_grid, frac_total, 'r-', lw=2, label="Total Fraction")
     ax[0].plot(v_grid, g, 'k--', lw=2, label="Blending function, g(v)")
-    ax[0].set_xlabel("Speed, v")
-    ax[0].set_ylabel("Component Fraction")
-    ax[0].set_title("Component Fraction vs. v")
-    ax[0].legend()
+    ax[0].set_xlabel("Speed, v", fontsize=fontsize)
+    ax[0].set_ylabel("Component Fraction", fontsize=fontsize)
+    ax[0].set_title("Component Fraction vs. v", fontsize=fontsize)
+    ax[0].tick_params(axis="both", which="major", labelsize=fontsize*0.8)
+    ax[0].legend(fontsize=fontsize*0.8)
     ax[0].grid(True)
-    
+
     # Subfigure 2: Plot DF vs v.
     ax[1].plot(v_grid, pdf_data, 'ko', markersize=4, label='Data (KDE)')
     ax[1].plot(v_grid, pdf_fit_Gaussian, 'g-', lw=2, label='Fitted Model of Gaussian')
     ax[1].plot(v_grid, pdf_fit_powerlaw, 'b-', lw=2, label='Fitted Model of powerlaw')
-    ax[1].plot(v_grid, pdf_fit, 'r-', lw=2, label='Fitted Model of combined')
-    ax[1].set_xlabel("Speed, v")
-    ax[1].set_ylabel("PDF")
-    ax[1].set_title("Combined Velocity DF Fit")
-    ax[1].legend()
+    ax[1].plot(v_grid, pdf_fit, 'r-', lw=2, label='Fitted Model of composite')
+    ax[1].set_xlabel("Speed, v", fontsize=fontsize)
+    ax[1].set_ylabel("PDF", fontsize=fontsize)
+    ax[1].set_title("Fitting of Speed DF", fontsize=fontsize)
+    ax[1].tick_params(axis="both", which="major", labelsize=fontsize*0.8)
+    ax[1].legend(fontsize=fontsize*0.8)
     ax[1].grid(True)
 
     plt.tight_layout()
@@ -327,7 +329,7 @@ def fit_speed_DF_tail_each_workflow():
     speeds_Gaussian = np.linalg.norm(velocities, axis=1)
     
     ## 2. fit
-    # Fit the combined model to the sample's speed PDF.
+    # Fit the composite model to the sample's speed PDF.
     # speeds = speeds_Gaussian
     speeds = V_data
     # bandwidth = 3.

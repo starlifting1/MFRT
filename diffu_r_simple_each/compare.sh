@@ -139,5 +139,15 @@ make;
 
 
 
+# 4. plot ERDC versus fitted fractal dimension
+
+cd ../diffu_r_simple_each/
+make clean; make main_pos_fractal
+./main_pos_fractal.exe
+
+cd ../data_process/
+python3 pos_fractal_sweep_analysis.py newest
+# cd ../data/examples_pos/pos_fractal_sweep/
+
 # set +e +u
 # echo -e "\nEnd."

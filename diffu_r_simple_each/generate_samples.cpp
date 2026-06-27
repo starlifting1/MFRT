@@ -98,10 +98,11 @@ void generate_spherical_samples(size_t N_particles, std::vector<PositionSpace>& 
 
 // Perlin motion function for PositionSpace
 void Perlin_motion(
-    std::vector<PositionSpace>& positions, PrecisionSetting scale, int octaves, PrecisionSetting step_size
+    std::vector<PositionSpace>& positions, PrecisionSetting scale, int octaves, PrecisionSetting step_size,
+    unsigned int seed, PrecisionSetting persistence, PrecisionSetting lacunarity
 ){
     // Initialize the Perlin noise generator
-    siv::PerlinNoise perlin(123456u); // Seed for consistency
+    siv::PerlinNoise perlin(seed); // Seed for consistency
 
     // Parallel loop for PositionSpace updates
 #pragma omp parallel for
@@ -113,8 +114,8 @@ void Perlin_motion(
 
         // Generate multi-layer Perlin noise by iterating through octaves
         for (int octave = 0; octave < octaves; ++octave) {
-            PrecisionSetting frequency = std::pow(2.0f, octave); // Increasing frequency for each octave
-            PrecisionSetting amplitude = std::pow(0.5f, octave); // Decreasing amplitude for each octave
+            PrecisionSetting frequency = std::pow(lacunarity, octave); // Increasing frequency for each octave
+            PrecisionSetting amplitude = std::pow(persistence, octave); // Decreasing amplitude for each octave
 
             noise_dx += amplitude * perlin.noise3D(x * scale * frequency, y * scale * frequency, z * scale * frequency);
             noise_dy += amplitude * perlin.noise3D(y * scale * frequency, z * scale * frequency, x * scale * frequency);
@@ -126,9 +127,20 @@ void Perlin_motion(
     }
 }
 
-void generate_noised_samples(std::vector<PositionSpace>& positions, int N_iter){
+void generate_noised_samples(
+    std::vector<PositionSpace>& positions, int N_iter, PrecisionSetting scale, int octaves,
+    PrecisionSetting step_size, unsigned int seed, PrecisionSetting persistence, PrecisionSetting lacunarity
+){
     std::cout<<"pos: "<<positions[0].x<<"\n";
-    
+
+    // Apply Perlin motion for the given number of iterations
+    for (int i = 0; i < N_iter; ++i) {
+        Perlin_motion(positions, scale, octaves, step_size, seed, persistence, lacunarity);
+    }
+    std::cout<<"pos: "<<positions[0].x<<"\n";
+}
+
+void generate_noised_samples(std::vector<PositionSpace>& positions, int N_iter){
     // Parameters for Perlin motion
     // int N_iter = 0;
     // int N_iter = 14;
@@ -140,21 +152,18 @@ void generate_noised_samples(std::vector<PositionSpace>& positions, int N_iter){
     PrecisionSetting step_size = 2.0;
     // PrecisionSetting step_size = 4.0;
 
-    // Apply Perlin motion for the given number of iterations
-    for (int i = 0; i < N_iter; ++i) {
-        Perlin_motion(positions, scale, octaves, step_size);
-    }
-    std::cout<<"pos: "<<positions[0].x<<"\n";
+    generate_noised_samples(positions, N_iter, scale, octaves, step_size, 123456u, 0.5, 2.0);
 }
 
 
 
 // Perlin motion function for VelocitySpace
 void Perlin_motion(
-    std::vector<VelocitySpace>& positions, PrecisionSetting scale, int octaves, PrecisionSetting step_size
+    std::vector<VelocitySpace>& positions, PrecisionSetting scale, int octaves, PrecisionSetting step_size,
+    unsigned int seed, PrecisionSetting persistence, PrecisionSetting lacunarity
 ){
     // Initialize the Perlin noise generator
-    siv::PerlinNoise perlin(123456u); // Seed for consistency
+    siv::PerlinNoise perlin(seed); // Seed for consistency
 
     // Parallel loop for PositionSpace updates
 #pragma omp parallel for
@@ -166,8 +175,8 @@ void Perlin_motion(
 
         // Generate multi-layer Perlin noise by iterating through octaves
         for (int octave = 0; octave < octaves; ++octave) {
-            PrecisionSetting frequency = std::pow(2.0f, octave); // Increasing frequency for each octave
-            PrecisionSetting amplitude = std::pow(0.5f, octave); // Decreasing amplitude for each octave
+            PrecisionSetting frequency = std::pow(lacunarity, octave); // Increasing frequency for each octave
+            PrecisionSetting amplitude = std::pow(persistence, octave); // Decreasing amplitude for each octave
 
             noise_dx += amplitude * perlin.noise3D(x * scale * frequency, y * scale * frequency, z * scale * frequency);
             noise_dy += amplitude * perlin.noise3D(y * scale * frequency, z * scale * frequency, x * scale * frequency);
@@ -179,9 +188,20 @@ void Perlin_motion(
     }
 }
 
-void generate_noised_samples(std::vector<VelocitySpace>& positions, int N_iter){
+void generate_noised_samples(
+    std::vector<VelocitySpace>& positions, int N_iter, PrecisionSetting scale, int octaves,
+    PrecisionSetting step_size, unsigned int seed, PrecisionSetting persistence, PrecisionSetting lacunarity
+){
     std::cout<<"pos: "<<positions[0].x<<"\n";
-    
+
+    // Apply Perlin motion for the given number of iterations
+    for (int i = 0; i < N_iter; ++i) {
+        Perlin_motion(positions, scale, octaves, step_size, seed, persistence, lacunarity);
+    }
+    std::cout<<"pos: "<<positions[0].x<<"\n";
+}
+
+void generate_noised_samples(std::vector<VelocitySpace>& positions, int N_iter){
     // Parameters for Perlin motion
     // int N_iter = 0;
     // int N_iter = 14;
@@ -190,11 +210,7 @@ void generate_noised_samples(std::vector<VelocitySpace>& positions, int N_iter){
     PrecisionSetting scale = 0.02;
     PrecisionSetting step_size = 20.0;
 
-    // Apply Perlin motion for the given number of iterations
-    for (int i = 0; i < N_iter; ++i) {
-        Perlin_motion(positions, scale, octaves, step_size);
-    }
-    std::cout<<"pos: "<<positions[0].x<<"\n";
+    generate_noised_samples(positions, N_iter, scale, octaves, step_size, 123456u, 0.5, 2.0);
 }
 
 

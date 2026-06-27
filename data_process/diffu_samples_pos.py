@@ -135,8 +135,8 @@ if __name__ == '__main__':
     path_save = "../data/examples_pos/"
     # is_run_exe = True
     is_run_exe = False
-    # is_enable_plot_each = True
-    is_enable_plot_each = False
+    is_enable_plot_each = True
+    # is_enable_plot_each = False
     is_enable_plot_eta = True
     # is_enable_plot_eta = False
     # is_run_different_types = True
