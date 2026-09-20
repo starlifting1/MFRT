@@ -2,11 +2,11 @@
 
 ## Introduction
 
-MFRT is program to compare the the two-body collisional relaxation time of reference DF (homogeneous DF or simulated DF) and modified DF (fractal substructured DF, i.e. adding Perlin noise to position space) of a galaxy particle sample.
+MFRT is a numerical code for quantifying, within separable phase-space distribution functions (DFs), how fractal-like position-space substructure and anisotropic or non-Gaussian velocity-space substructure modify Chandrasekhar-style two-body diffusion and collisional relaxation relative to homogeneous-position and isotropic-Gaussian reference distributions.
 
 Author: Jianyu Gu et al.
 
-`MFRT/diff_r_sample_each/`: path to compute the the two-body collisional diffusion coefficient for each particles of fractal substructured galaxy.
+`MFRT/diffu_r_simple_each/`: C++ code for calculating two-body collisional diffusion coefficients.
 
 `MFRT/data_process/`: path to data process and plot.
 
@@ -20,22 +20,21 @@ License: GPL-3.0
 
 Compiling:
 ```bash
-cd MFRT/diff_r_sample_each/
+cd MFRT/diffu_r_simple_each/
 make clean; make all
 ```
 
 ## Running
 
-```bash
-mkdir snapshots_like_a_galaxy/ samples_observed/ samples_simulated/ samples_pos/ samples_vel/ examples_pos/ examples_vel/
+### calculation
 
-#(unfinished instructions) Then do in a loop like below. Choose some commands in MFRT/diff_r_sample_each/compare.sh.
+- `main.cpp` (compiled as `out.exe`) generates or reads position-space samples and calculates the position-space diffusion coefficient for each particle.
+- `main_vel.cpp` (compiled as `out_vel.exe`) generates isotropic-Gaussian, anisotropic, power-law-tailed, fractal-like, and composite velocity-space samples and calculates their diffusion tensors.
+- `main_pos_fractal.cpp` (compiled as `main_pos_fractal.exe`) performs the position-space fractal-parameter sweep and records the diffusion enhancement relative to the homogeneous reference sample.
 
-#compute two-body collisional diffusion coeffients
-cd MFRT/diff_r_sample_each/
-bash compare.sh
+### plot
 
-#data process
+```
 cd MFRT/data_process/
 python3 diffu_samples_pos.py
 python3 diffu_samples_vel.py
