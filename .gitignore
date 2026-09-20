@@ -1,9 +1,45 @@
-# build & temp
-build/ cmake-build*/ dist/ out/ logs/ nohup.out
-*.o *.a *.so *.dylib *.dll *.mod
-__pycache__/ *.pyc
-# vendor dumps & archives
-packages/
-*.zip *.tar *.tar.gz *.tgz *.7z
-# OS/editor
+# Simulation inputs, numerical results, and generated figures
+/data/
+*.csv
+*.dat
+*.fit
+*.npy
+*.npz
+*.txt
+!LICENSE.txt
+!requirements*.txt
+*.pdf
+*.eps
+*.png
+*.jpg
+*.jpeg
+*.gif
+
+# Compiled files and build directories
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.mod
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+
+# Python, editor, OS, and runtime files
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/
+.vscode/
+.idea/
 .DS_Store
+*~
+*.swp
+*.swo
+*.log
+*.tmp

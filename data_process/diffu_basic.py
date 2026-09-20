@@ -2,6 +2,8 @@
 # -*- coding:utf-8 -*-
 #In[] modules
 import numpy as np
+from math import erf
+from pathlib import Path
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from sklearn.neighbors import KernelDensity
@@ -27,7 +29,22 @@ frac_mass = 1.
 M_total_gal_1e10MSun = 137.
 R0_scale = 75.
 
-GXX = 0.15
+# Legacy C++ runs stored in this project used GXX = G(X)/X = 0.15.
+# Keep this value only for interpreting those saved position-space diffusion files.
+GXX_legacy = 0.15
+X_classical = np.sqrt(3.0 / 2.0)
+G_classical = (
+    erf(X_classical)
+    - 2.0 * X_classical / np.sqrt(np.pi) * np.exp(-X_classical**2)
+) / (2.0 * X_classical**2)
+GXX_classical = G_classical / X_classical
+# Switch for the raw position-space files currently stored in this project.
+# Keep this True while processing data made by the legacy C++ estimator that
+# used GXX=0.15.  Set it to False after new C++ runs use the exact G(X)/X.
+ENABLE_LEGACY_POSITION_GXX_CORRECTION = True
+# Backward-compatible name used by legacy coefficient helpers below.
+GXX = GXX_legacy
+
 lambda1 = 0.75
 lambda2 = 1.5
 lambda3 = 1.5
@@ -75,15 +92,198 @@ def calculate_Diffu_0_unit(N_particles, M_total, n0, v0):
     ) / (3.0 * N_particles * N_particles * v0)
     return Diffu_0_unit
 
-def diffusion_reference_value_Diffu_ref(N_particles, M_total, R0, v0):
-    """
-    Return the reference value of diffusion coef.
+def diffusion_classical_value(N_particles, M_total, R0, v0):
+    """Return the Chandrasekhar--Binney--Tremaine classical diffusion value.
+
+    This uses Eq. (12) with X=sqrt(3/2) and the exact value of G(X)/X,
+    rather than the legacy C++ approximation GXX=0.15.
     """
     ln_Lambda = np.log(lambda4 * N_particles)
     n0 = (3.0 * N_particles) / (4.0 * np.pi * R0**3)
     Diffu_0_unit = calculate_Diffu_0_unit(N_particles, M_total, n0, v0)
-    # return np.sqrt(6.0 / np.pi) * GXX * ln_Lambda * Diffu_0_unit
-    return 3.0 * np.sqrt(6.0 / np.pi) * GXX * ln_Lambda * Diffu_0_unit
+    return 3.0 * np.sqrt(6.0 / np.pi) * GXX_classical * ln_Lambda * Diffu_0_unit
+
+
+def diffusion_reference_value_Diffu_ref(N_particles, M_total, R0, v0):
+    """Backward-compatible wrapper for the exact classical reference."""
+    return diffusion_classical_value(N_particles, M_total, R0, v0)
+
+
+def legacy_position_gxx_correction_factor(enabled=None):
+    """Return the optional conversion from legacy GXX=0.15 to exact G(X)/X."""
+    if enabled is None:
+        enabled = ENABLE_LEGACY_POSITION_GXX_CORRECTION
+    return GXX_classical / GXX_legacy if enabled else 1.0
+
+
+def build_classical_limit_calibration(
+    N_particles, M_total, R0, v0, reference_median_raw, pos_or_vel,
+    *, apply_legacy_position_gxx_correction=None
+):
+    """Build post-processing factors for saved legacy diffusion data.
+
+    The saved position-space data contain the legacy GXX=0.15 prefactor.
+    We first correct that historical formula prefactor, then define the
+    classical-limit calibration factor from the corresponding uniform/iso
+    numerical reference median.  Velocity-space raw tensors do not contain
+    GXX, so their formula-correction factor is unity.
+    """
+    reference_median_raw = float(reference_median_raw)
+    if not np.isfinite(reference_median_raw) or reference_median_raw <= 0.0:
+        raise ValueError('reference_median_raw must be finite and positive')
+    if pos_or_vel not in ('pos', 'vel'):
+        raise ValueError("pos_or_vel must be 'pos' or 'vel'")
+
+    legacy_correction_enabled = False
+    if pos_or_vel == 'pos':
+        legacy_correction_enabled = (
+            ENABLE_LEGACY_POSITION_GXX_CORRECTION
+            if apply_legacy_position_gxx_correction is None
+            else bool(apply_legacy_position_gxx_correction)
+        )
+    formula_correction = legacy_position_gxx_correction_factor(
+        legacy_correction_enabled
+    )
+    reference_median_formula = formula_correction * reference_median_raw
+    D_classical = diffusion_classical_value(N_particles, M_total, R0, v0)
+    C_calibration = D_classical / reference_median_formula
+
+    return {
+        'N_particles': float(N_particles),
+        'D_classical': D_classical,
+        'reference_median_raw': reference_median_raw,
+        'formula_correction': formula_correction,
+        'reference_median_formula': reference_median_formula,
+        'C_calibration': C_calibration,
+        'total_factor': formula_correction * C_calibration,
+        'pos_or_vel': pos_or_vel,
+        'legacy_position_gxx_correction_enabled': legacy_correction_enabled,
+    }
+
+
+def apply_diffusion_calibration(values, calibration_info):
+    """Apply formula correction and classical-limit calibration to saved raw values."""
+    return np.asarray(values) * calibration_info['total_factor']
+
+
+def update_fractal_dimension_figure_index(records, output_path, space):
+    """Update one space in the repository-wide figure-to-D_frac TSV index."""
+    if space not in ("position", "velocity"):
+        raise ValueError("space must be 'position' or 'velocity'")
+
+    output = Path(output_path)
+    existing = []
+    if output.exists():
+        for line in output.read_text(encoding="utf-8").splitlines():
+            if not line or line.startswith("#"):
+                continue
+            fields = line.split("\t")
+            if len(fields) == 8 and fields[1] != space:
+                existing.append(fields)
+
+    current = []
+    for record in records:
+        dimension = float(record["fitted_D_frac"])
+        if not np.isfinite(dimension):
+            raise ValueError("fractal-dimension index contains NaN or inf")
+        figure_path = str(record["figure_relative_path"])
+        if figure_path.startswith("/") or "\t" in figure_path:
+            raise ValueError("figure paths in the fractal-dimension index must be relative")
+        current.append([
+            figure_path,
+            space,
+            str(record["sample_type"]),
+            str(int(record["N"])),
+            "{:.10f}".format(dimension),
+            "yes" if record["displayed_on_figure"] else "no",
+            str(record["figure_kind"]),
+            "yes" if record["perlin_modified"] else "no",
+        ])
+
+    rows_by_path = {row[0]: row for row in existing + current}
+    rows = sorted(rows_by_path.values(), key=lambda row: row[0])
+    header = (
+        "# figure_relative_path\tspace\tsample_type\tN\tfitted_D_frac\t"
+        "displayed_on_figure\tfigure_kind\tperlin_modified\n"
+    )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        header + "".join("\t".join(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    print("wrote", output)
+
+
+def validate_calibration_diagnostics(
+    N_particles,
+    D_classical,
+    reference_median_calibration,
+    zeta_raw,
+    zeta_calibration,
+    total_factors,
+    *,
+    max_abs_log_slope=0.5,
+):
+    """Validate reference alignment, ratio invariance, finiteness, and smoothness.
+
+    Smoothness is checked through adjacent logarithmic slopes of the total
+    calibration factor versus particle count.  The deliberately conservative
+    default rejects a factor changing faster than N**0.5 between saved samples.
+    """
+    arrays = {
+        "N_particles": np.asarray(N_particles, dtype=float),
+        "D_classical": np.asarray(D_classical, dtype=float),
+        "reference_median_calibration": np.asarray(
+            reference_median_calibration, dtype=float
+        ),
+        "zeta_raw": np.asarray(zeta_raw, dtype=float),
+        "zeta_calibration": np.asarray(zeta_calibration, dtype=float),
+        "total_factors": np.asarray(total_factors, dtype=float),
+    }
+    lengths = {values.size for values in arrays.values()}
+    if lengths == {0} or len(lengths) != 1:
+        raise ValueError("calibration diagnostic arrays must have one non-zero length")
+    if any(not np.all(np.isfinite(values)) for values in arrays.values()):
+        raise ValueError("calibration diagnostics contain NaN or inf")
+    if np.any(arrays["N_particles"] <= 0.0) or np.any(arrays["total_factors"] <= 0.0):
+        raise ValueError("particle counts and calibration factors must be positive")
+
+    order = np.argsort(arrays["N_particles"])
+    counts = arrays["N_particles"][order]
+    factors = arrays["total_factors"][order]
+    if np.any(np.diff(counts) <= 0.0):
+        raise ValueError("particle counts must be unique")
+
+    reference_relative_error = np.abs(
+        arrays["reference_median_calibration"] / arrays["D_classical"] - 1.0
+    )
+    zeta_absolute_error = np.abs(arrays["zeta_calibration"] - arrays["zeta_raw"])
+    if not np.allclose(
+        arrays["reference_median_calibration"],
+        arrays["D_classical"],
+        rtol=1.0e-12,
+        atol=0.0,
+    ):
+        raise ValueError("calibrated numerical reference does not match D_classical")
+    if not np.allclose(
+        arrays["zeta_calibration"], arrays["zeta_raw"], rtol=1.0e-12, atol=1.0e-14
+    ):
+        raise ValueError("calibration changed the enhancement ratio zeta")
+
+    log_slopes = np.diff(np.log(factors)) / np.diff(np.log(counts))
+    max_slope = float(np.max(np.abs(log_slopes))) if log_slopes.size else 0.0
+    if not np.isfinite(max_slope) or max_slope > max_abs_log_slope:
+        raise ValueError(
+            "calibration factor is not smooth: max |d ln C / d ln N| "
+            f"= {max_slope:.6g} > {max_abs_log_slope:.6g}"
+        )
+
+    return {
+        "max_reference_relative_error": float(np.max(reference_relative_error)),
+        "max_zeta_absolute_error": float(np.max(zeta_absolute_error)),
+        "max_abs_factor_log_slope": max_slope,
+        "smoothness_limit": float(max_abs_log_slope),
+    }
 
 def calculate_fixed_const_coefs(N_particles, M_total, R0, v0):
     '''
@@ -146,6 +346,10 @@ def calculate_fixed_const_coefs(N_particles, M_total, R0, v0):
         "n0": n0,
         "Diffu_0_unit": Diffu_0_unit,
         "Diffu_ref": Diffu_ref,
+        "D_classical": Diffu_ref,
+        "GXX_legacy": GXX_legacy,
+        "GXX_classical": GXX_classical,
+        "position_formula_correction": legacy_position_gxx_correction_factor(),
         "coef_Diffu_parallel_iso": coef_Diffu_parallel_iso,
         "coef_Diffu_tensor_uniform": coef_Diffu_tensor_uniform,
         "coef_Diffu_separable": coef_Diffu_separable,
@@ -197,6 +401,10 @@ def plot_velocity_speed_distribution(
         title (str): title of the plot
         debug (bool): whether to print debug information
     """
+    fontsize = 36.0
+    tick_fontsize = 30.0
+    legend_fontsize = 24.0
+
     # all samples
     N_compare = len(vel_list)
     all_speeds = list(range(N_compare))
@@ -225,27 +433,36 @@ def plot_velocity_speed_distribution(
             all_dfs[i] = knn_kde_1d(all_speeds[i], v_grid, k=k_neighbors)
 
     # Step 4: Plot
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(12, 8))
     for i in range(N_compare):
-        plt.plot(v_grid, all_dfs[i], label=labels[i], lw=2)
+        plt.plot(v_grid, all_dfs[i], label=labels[i], lw=3)
     if pos_or_vel == "vel":
-        plt.xlabel(r"speed $v$, $\mathrm{km/s}$")
-        plt.ylabel(r"PDF (KDE) $f(v)$, $1/\mathrm{km/s}$")
+        plt.xlabel(r"Speed $v$ ($\mathrm{km\,s^{-1}}$)", fontsize=fontsize)
+        plt.ylabel(r"PDF (KDE) $f(v)$ ($\mathrm{km\,s^{-1}})^{-1}$", fontsize=fontsize)
     else: #pos
-        plt.xlabel(r"radius $r$, $\mathrm{kpc}$")
-        plt.ylabel(r"number density (KDE) $n(r)$, $1/\mathrm{kpc}$")
+        plt.xlabel(r"radius $r$, $\mathrm{kpc}$", fontsize=fontsize)
+        plt.ylabel(r"number density (KDE) $n(r)$, $1/\mathrm{kpc}$", fontsize=fontsize)
     # title = "Velocity Speed Distribution (KDE)"
     # plt.title(title)
     plt.grid(True)
-    plt.legend()
+    plt.tick_params(axis="both", which="both", labelsize=tick_fontsize)
+    plt.legend(
+        fontsize=legend_fontsize,
+        loc="lower center",
+        bbox_to_anchor=(0.5, 0.03),
+        framealpha=0.25,
+        borderpad=0.3,
+        labelspacing=0.25,
+        handlelength=1.8,
+    )
     plt.tight_layout()
     save_file = None
     if pos_or_vel == "vel":
-        save_file = save_path+"velocity_DF_speed_compare_{}.eps".format(suffix)
+        save_file = save_path+"velocity_DF_speed_compare_{}.pdf".format(suffix)
     else: #pos
-        save_file = save_path+"rho_r_compare_{}.eps".format(suffix)
+        save_file = save_path+"rho_r_compare_{}.pdf".format(suffix)
     fig_tmp = plt.gcf()
-    fig_tmp.savefig(save_file, format="eps", bbox_inches='tight')
+    fig_tmp.savefig(save_file, format="pdf", bbox_inches='tight')
     if is_show:
         plt.show()
     print("Plot velocity_DF_speed_compare, done.")
@@ -299,7 +516,7 @@ def plot_velocity_DF_contour_compare(
     figsize = (20, 15)
 
     for idx, vel_data in enumerate(datasets):
-        fig = plt.figure(figsize=figsize)
+        fig = plt.figure(figsize=(figsize[0], 18))
         rho_logcube = np.zeros((Nx, Ny, Nz))
         N_s = len(vel_data)
 
@@ -340,11 +557,19 @@ def plot_velocity_DF_contour_compare(
             )
             ax.set_aspect('equal')
             if pos_or_vel == "vel":
-                ax.set_title(f"$v_z$ = {grid_z[k]:.2f} km/s", fontsize=fontsize)
-                ax.set_xlabel("$v_x, km/s$", fontsize=fontsize)
-                ax.set_ylabel("$v_y, km/s$", fontsize=fontsize)
+                ax.set_title(
+                    fr"$v_z$ = {grid_z[k]:.2f} $\mathrm{{km\,s^{{-1}}}}$",
+                    fontsize=fontsize,
+                    pad=10,
+                )
+                ax.set_xlabel(r"$v_x$ ($\mathrm{km\,s^{-1}}$)", fontsize=fontsize)
+                ax.set_ylabel(r"$v_y$ ($\mathrm{km\,s^{-1}}$)", fontsize=fontsize)
             else:
-                ax.set_title(f"{labels[idx]}, $z$ = {grid_z[k]:.2f} kpc", fontsize=fontsize)
+                ax.set_title(
+                    f"{labels[idx]}, $z$ = {grid_z[k]:.2f} kpc",
+                    fontsize=fontsize,
+                    pad=10,
+                )
                 ax.set_xlabel("$x$, kpc", fontsize=fontsize)
                 ax.set_ylabel("$y$, kpc", fontsize=fontsize)
             ax.tick_params(labelsize=fontsize)
@@ -357,7 +582,10 @@ def plot_velocity_DF_contour_compare(
             cbar.set_label(fr"$\log{{10}} ( n(\mathbf{{r}}) / n_{{\mathrm{{center}}}} )$", fontsize=fontsize)
         cbar.ax.tick_params(labelsize=fontsize)
 
-        fig.subplots_adjust(left=0.05, right=0.9, top=0.93, bottom=0.07, wspace=0.3, hspace=0.4)
+        fig.subplots_adjust(
+            left=0.05, right=0.9, top=0.93, bottom=0.07,
+            wspace=0.3, hspace=0.75,
+        )
         save_file = None
         if pos_or_vel == "vel":
             save_file = save_path + f"velocity_DF_contour_compare_"+labels[idx]+".pdf"
@@ -374,17 +602,27 @@ def plot_sample_3D_pos_or_vel(
     vel, path_save, Dim_frac=None, is_set_lim=True, 
     suffix="suffix", pos_or_vel="vel"
 ):
+    fontsize = 16.0
+    tick_fontsize = 14.0
     fig = plt.figure(figsize=(10, 8))
     ax = fig.add_subplot(1, 1, 1, projection='3d')
     ax.scatter(vel[:, 0], vel[:, 1], vel[:, 2], s=0.1, alpha=1.0, rasterized=True)
     if pos_or_vel == "vel":
-        ax.set_xlabel(r"$v_x$, $\mathrm{km/s}$")
-        ax.set_xlabel(r"$v_y$, $\mathrm{km/s}$")
-        ax.set_xlabel(r"$v_z$, $\mathrm{km/s}$")
+        ax.set_xlabel(
+            r"$v_x$ ($\mathrm{km\,s^{-1}}$)", fontsize=fontsize, labelpad=14,
+        )
+        ax.set_ylabel(
+            r"$v_y$ ($\mathrm{km\,s^{-1}}$)", fontsize=fontsize, labelpad=16,
+        )
+        ax.set_zlabel(
+            r"$v_z$ ($\mathrm{km\,s^{-1}}$)", fontsize=fontsize, labelpad=22,
+        )
     else:
-        ax.set_xlabel(r"$x$, $\mathrm{kpc}$")
-        ax.set_xlabel(r"$x$, $\mathrm{kpc}$")
-        ax.set_xlabel(r"$x$, $\mathrm{kpc}$")
+        ax.set_xlabel(r"$x$ ($\mathrm{kpc}$)", fontsize=fontsize, labelpad=14)
+        ax.set_ylabel(r"$y$ ($\mathrm{kpc}$)", fontsize=fontsize, labelpad=16)
+        ax.set_zlabel(r"$z$ ($\mathrm{kpc}$)", fontsize=fontsize, labelpad=22)
+    ax.tick_params(axis="both", which="major", labelsize=tick_fontsize, pad=2)
+    ax.zaxis.set_tick_params(labelsize=tick_fontsize, pad=4)
     if is_set_lim:
         all_data = vel
         percent_clip = 98.0
@@ -400,7 +638,10 @@ def plot_sample_3D_pos_or_vel(
         ax.set_ylim(bounds[1][0], bounds[1][1])
         ax.set_zlim(bounds[2][0], bounds[2][1])
     if Dim_frac is not None:
-        ax.set_title(fr"fractal dim $D_\mathrm{{frac}}$ = {Dim_frac:.4f}")
+        ax.set_title(
+            fr"fractal dim $D_\mathrm{{frac}}$ = {Dim_frac:.4f}",
+            fontsize=fontsize,
+        )
     if pos_or_vel == "vel":
         save_file = path_save+"samplepoints_vel_{}.pdf".format(suffix)
     else:
@@ -413,7 +654,7 @@ def plot_sample_3D_pos_or_vel(
     return 0
 
 def plot_normalized_pdf_components(Diffu_data_components, label_list, Diffu_0, suffix="suffix", pos_or_vel="vel", k_neighbors=32):
-    fontsize = 40.
+    fontsize = 48.0
     pointsize = 3.2
     figsize = 20, 15 #for 3, 3
     dpi = None
@@ -438,22 +679,25 @@ def plot_normalized_pdf_components(Diffu_data_components, label_list, Diffu_0, s
         # normalized_distribution = kde_bandwidth_1d(Diffu_data, v_grid, bandwidth)
         normalized_distribution = knn_kde_1d(Diffu_data, v_grid, k_neighbors)
         plt.plot(v_grid, normalized_distribution, 'o-', label='abs of component {}'.format(label_list[i]), color=colors[i], lw=pointsize)
-        # plt.plot([mean_val, mean_val], [0., np.max(normalized_distribution)], '--', label='Diffu_mean = {:.4f}'.format(mean_val), color=colors[i], lw=pointsize)
-        # plt.plot([median_val, median_val], [0., np.max(normalized_distribution)], '-.', label='Diffu_median = {:.4f}'.format(median_val), color=colors[i], lw=pointsize)
+        # plt.plot([mean_val, mean_val], [0., np.max(normalized_distribution)], '--', label='Mean = {:.4f}'.format(mean_val), color=colors[i], lw=pointsize)
+        # plt.plot([median_val, median_val], [0., np.max(normalized_distribution)], '-.', label='Median = {:.4f}'.format(median_val), color=colors[i], lw=pointsize)
     
     if Diffu_0 is not None:
-        plt.plot([Diffu_0, Diffu_0], [0., np.max(normalized_distribution)], label='Diffu_0 = {:.4f}'.format(Diffu_0), color='k', lw=pointsize)
+        plt.plot([Diffu_0, Diffu_0], [0., np.max(normalized_distribution)], label='Chandrasekhar--BT classical reference = {:.4f}'.format(Diffu_0), color='k', lw=pointsize)
     
     plt.xscale("log")
     plt.yscale("log")
     # plt.title(r"histogram of main diffusion coefficient of all particles", fontsize=fontsize)
     if pos_or_vel == "vel":
-        plt.xlabel(r"diffusion $D_\mathrm{vel}$, $\mathrm{(km/s)^3/kpc}$", fontsize=fontsize)
+        plt.xlabel(r"diffusion $D_\mathrm{vel}^{\mathrm{calibration}}$ ($\mathrm{km\,s^{-1}})^3\,\mathrm{kpc^{-1}}$", fontsize=fontsize)
     else:
-        plt.xlabel(r"diffusion $D_\mathrm{pos}$, $\mathrm{(km/s)^3/kpc}$", fontsize=fontsize)
-    plt.ylabel(r"distribution $f$, $\mathrm{kpc/(km/s)^3}$", fontsize=fontsize)
+        plt.xlabel(r"diffusion $D_\mathrm{pos}^{\mathrm{calibration}}$ ($\mathrm{km\,s^{-1}})^3\,\mathrm{kpc^{-1}}$", fontsize=fontsize)
+    plt.ylabel(r"distribution $f$ $\mathrm{kpc}\,(\mathrm{km\,s^{-1}})^{-3}$", fontsize=fontsize)
     
-    plt.legend(fontsize=fontsize*0.8, loc=0)
+    plt.legend(
+        fontsize=fontsize*0.72, loc=0, framealpha=0.25,
+        borderpad=0.3, labelspacing=0.3, handlelength=1.6,
+    )
     plt.tick_params(which='major', length=0, labelsize=fontsize * 1.)
     plt.tight_layout()
     if pos_or_vel == "vel":
@@ -499,29 +743,32 @@ def plot_normalized_pdf_from_eachpoints_histogram(Diffu_data, Diffu_0, suffix="s
     plt.plot(bin_centers, normalized_distribution, 'o-', label='Normalized Distribution', color='b', lw=pointsize)
 
     plt.grid(True)
-    plt.plot([mean_val, mean_val], [0., np.max(normalized_distribution)], '--', label='Diffu_mean = {:.4f}'.format(mean_val), color='k', lw=pointsize)
-    plt.plot([median_val, median_val], [0., np.max(normalized_distribution)], '-.', label='Diffu_median = {:.4f}'.format(median_val), color='k', lw=pointsize)
+    plt.plot([mean_val, mean_val], [0., np.max(normalized_distribution)], '--', label='Mean = {:.4f}'.format(mean_val), color='k', lw=pointsize)
+    plt.plot([median_val, median_val], [0., np.max(normalized_distribution)], '-.', label='Median = {:.4f}'.format(median_val), color='k', lw=pointsize)
     if Diffu_0 is not None:
-        plt.plot([Diffu_0, Diffu_0], [0., np.max(normalized_distribution)], label='Diffu_0 = {:.4f}'.format(Diffu_0), color='k', lw=pointsize)
+        plt.plot([Diffu_0, Diffu_0], [0., np.max(normalized_distribution)], label='Chandrasekhar--BT classical reference = {:.4f}'.format(Diffu_0), color='k', lw=pointsize)
     
     plt.xscale("log")
     plt.yscale("log")
     # plt.title(r"histogram of main diffusion coefficient of all particles", fontsize=fontsize)
     if pos_or_vel == "vel":
-        plt.xlabel(r"diffusion $D_\mathrm{vel}$, $\mathrm{(km/s)^3/kpc}$", fontsize=fontsize)
+        plt.xlabel(r"diffusion $D_\mathrm{vel}^{\mathrm{calibration}}$ ($\mathrm{km\,s^{-1}})^3\,\mathrm{kpc^{-1}}$", fontsize=fontsize)
     else:
-        plt.xlabel(r"diffusion $D_\mathrm{pos}$, $\mathrm{(km/s)^3/kpc}$", fontsize=fontsize)
-    plt.ylabel(r"distribution $f$, $\mathrm{kpc/(km/s)^3}$", fontsize=fontsize)
+        plt.xlabel(r"diffusion $D_\mathrm{pos}^{\mathrm{calibration}}$ ($\mathrm{km\,s^{-1}})^3\,\mathrm{kpc^{-1}}$", fontsize=fontsize)
+    plt.ylabel(r"distribution $f$ $\mathrm{kpc}\,(\mathrm{km\,s^{-1}})^{-3}$", fontsize=fontsize)
     
-    plt.legend(fontsize=fontsize*0.8, loc=0)
+    plt.legend(
+        fontsize=fontsize*0.72, loc=0, framealpha=0.25,
+        borderpad=0.3, labelspacing=0.3, handlelength=1.6,
+    )
     plt.tick_params(which='major', length=0, labelsize=fontsize * 1.)
     plt.tight_layout()
     if pos_or_vel == "vel":
-        save_file = "../data/examples_vel/diffu_eff_DF_{}_histogram.eps".format(suffix)
+        save_file = "../data/examples_vel/diffu_eff_DF_{}_histogram.pdf".format(suffix)
     else:
-        save_file = "../data/examples_pos/diffu_r_DF_{}_histogram.eps".format(suffix)
+        save_file = "../data/examples_pos/diffu_r_DF_{}_histogram.pdf".format(suffix)
     fig_tmp = plt.gcf()
-    fig_tmp.savefig(save_file, format="eps", bbox_inches='tight')
+    fig_tmp.savefig(save_file, format="pdf", bbox_inches='tight')
     plt.close()
     
     print("Plot {}, done.".format(suffix))
@@ -544,7 +791,7 @@ def plot_normalized_pdf_from_eachpoints_histogram_vel_data(
         count_total = len(Diffu_data)
         # ads.DEBUG_PRINT_V(1, min_val, max_val, mean_val, median_val, count_total, "Diffu_data")
         
-        fontsize = 40.
+        fontsize = 48.0
         pointsize = 3.2
         figsize = 20, 15 #for 3, 3
         dpi = None
@@ -569,34 +816,37 @@ def plot_normalized_pdf_from_eachpoints_histogram_vel_data(
         plt.plot(centers, pdf_vals, 'o-', lw=pointsize, label='Normalized Distribution')
         
         # plt.grid(True)
-        # plt.plot([mean_val, mean_val], [0., np.max(normalized_distribution)], '--', label='Diffu_mean = {:.4f}'.format(mean_val), color='k', lw=pointsize)
-        # plt.plot([median_val, median_val], [0., np.max(normalized_distribution)], '-.', label='Diffu_median = {:.4f}'.format(median_val), color='k', lw=pointsize)
+        # plt.plot([mean_val, mean_val], [0., np.max(normalized_distribution)], '--', label='Mean = {:.4f}'.format(mean_val), color='k', lw=pointsize)
+        # plt.plot([median_val, median_val], [0., np.max(normalized_distribution)], '-.', label='Median = {:.4f}'.format(median_val), color='k', lw=pointsize)
         # if Diffu_0 is not None:
-        #     plt.plot([Diffu_0, Diffu_0], [0., np.max(normalized_distribution)], label='Diffu_0 = {:.4f}'.format(Diffu_0), color='k', lw=pointsize)
+        #     plt.plot([Diffu_0, Diffu_0], [0., np.max(normalized_distribution)], label='Classical reference = {:.4f}'.format(Diffu_0), color='k', lw=pointsize)
         
-        plt.axvline(mean_val,   color='k', ls='--', lw=pointsize, label=f'Diffu_mean = {mean_val:.4f}')
-        plt.axvline(median_val, color='k', ls='-.', lw=pointsize, label=f'Diffu_median = {median_val:.4f}')
+        plt.axvline(mean_val,   color='k', ls='--', lw=pointsize, label=f'Mean = {mean_val:.4f}')
+        plt.axvline(median_val, color='k', ls='-.', lw=pointsize, label=f'Median = {median_val:.4f}')
         if Diffu_0 is not None:
-            plt.axvline(Diffu_0, color='k', lw=pointsize, label=f'Diffu_ref = {Diffu_0:.4f}')
+            plt.axvline(Diffu_0, color='k', lw=pointsize, label=f'Chandrasekhar--BT classical reference = {Diffu_0:.4f}')
         
         plt.xscale("log")
         plt.yscale("log")
         # plt.title(r"histogram of main diffusion coefficient of all particles", fontsize=fontsize)
         if pos_or_vel == "vel":
-            plt.xlabel(r"diffusion $D_\mathrm{vel}$, $\mathrm{(km/s)^3/kpc}$", fontsize=fontsize)
+            plt.xlabel(r"diffusion $D_\mathrm{vel}^{\mathrm{calibration}}$ ($\mathrm{km\,s^{-1}})^3\,\mathrm{kpc^{-1}}$", fontsize=fontsize)
         else:
-            plt.xlabel(r"diffusion $D_\mathrm{pos}$, $\mathrm{(km/s)^3/kpc}$", fontsize=fontsize)
-        plt.ylabel(r"distribution $f$, $\mathrm{kpc/(km/s)^3}$", fontsize=fontsize)
+            plt.xlabel(r"diffusion $D_\mathrm{pos}^{\mathrm{calibration}}$ ($\mathrm{km\,s^{-1}})^3\,\mathrm{kpc^{-1}}$", fontsize=fontsize)
+        plt.ylabel(r"distribution $f$ $\mathrm{kpc}\,(\mathrm{km\,s^{-1}})^{-3}$", fontsize=fontsize)
         
-        plt.legend(fontsize=fontsize*0.8, loc=0)
+        plt.legend(
+            fontsize=fontsize*0.72, loc=0, framealpha=0.25,
+            borderpad=0.3, labelspacing=0.3, handlelength=1.6,
+        )
         plt.tick_params(which='major', length=0, labelsize=fontsize * 1.)
         plt.tight_layout()
         if pos_or_vel == "vel":
-            save_file = "../data/examples_vel/diffu_eff_DF_{}_histogram.eps".format(suffix)
+            save_file = "../data/examples_vel/diffu_eff_DF_{}_histogram.pdf".format(suffix)
         else:
-            save_file = "../data/examples_pos/diffu_r_DF_{}_histogram.eps".format(suffix)
+            save_file = "../data/examples_pos/diffu_r_DF_{}_histogram.pdf".format(suffix)
         fig_tmp = plt.gcf()
-        fig_tmp.savefig(save_file, format="eps", bbox_inches='tight')
+        fig_tmp.savefig(save_file, format="pdf", bbox_inches='tight')
         plt.close()
     
     else:
@@ -610,7 +860,7 @@ def plot_normalized_pdf_from_eachpoints_histogram_vel_data(
         median_val = np.median(Diffu_data)
         count_total = len(Diffu_data)
         
-        fontsize = 40.
+        fontsize = 48.0
         pointsize = 3.2
         figsize = 20, 20
         dpi = None
@@ -623,10 +873,10 @@ def plot_normalized_pdf_from_eachpoints_histogram_vel_data(
         ax1.set_yscale("log")
         ax1.grid(True)
         if pos_or_vel == "vel":
-            ax1.set_xlabel(r"diffusion $D_\mathrm{vel}$, $\mathrm{(km/s)^3/kpc}$", fontsize=fontsize)
-            ax1.set_ylabel(r"speed $v$, $\mathrm{km/s}$", fontsize=fontsize)
+            ax1.set_xlabel(r"diffusion $D_\mathrm{vel}^{\mathrm{calibration}}$ ($\mathrm{km\,s^{-1}})^3\,\mathrm{kpc^{-1}}$", fontsize=fontsize)
+            ax1.set_ylabel(r"speed $v$ ($\mathrm{km\,s^{-1}}$)", fontsize=fontsize)
         else:
-            ax1.set_xlabel(r"diffusion $D_\mathrm{pos}$, $\mathrm{(kpc)^3/kpc}$", fontsize=fontsize)
+            ax1.set_xlabel(r"diffusion $D_\mathrm{pos}^{\mathrm{calibration}}$ ($\mathrm{km\,s^{-1}})^3\,\mathrm{kpc^{-1}}$", fontsize=fontsize)
             ax1.set_ylabel(r"position scale, $\mathrm{kpc}$", fontsize=fontsize)
         # ax1.set_title("Particle speed vs. diffusion coef", fontsize=fontsize)
         
@@ -641,21 +891,25 @@ def plot_normalized_pdf_from_eachpoints_histogram_vel_data(
         centers = bin_edges[:-1] * np.sqrt(bin_edges[1:] / bin_edges[:-1])
         ax2.plot(centers, pdf_vals, 'o-', lw=pointsize, label='Normalized Distribution')
         
-        ax2.axvline(mean_val,   color='k', ls='--', lw=pointsize, label=f'Diffu_mean = {mean_val:.4f}')
-        ax2.axvline(median_val, color='k', ls='-.', lw=pointsize, label=f'Diffu_median = {median_val:.4f}')
+        ax2.axvline(mean_val,   color='k', ls='--', lw=pointsize, label=f'Mean = {mean_val:.4f}')
+        ax2.axvline(median_val, color='k', ls='-.', lw=pointsize, label=f'Median = {median_val:.4f}')
         if Diffu_0 is not None:
-            ax2.axvline(Diffu_0, color='k', lw=pointsize, label=f'Diffu_ref = {Diffu_0:.4f}')
+            ax2.axvline(Diffu_0, color='k', lw=pointsize, label=f'Chandrasekhar--BT classical reference = {Diffu_0:.4f}')
         
         ax2.set_xscale("log")
         ax2.set_yscale("log")
         ax2.grid(True)
         if pos_or_vel == "vel":
-            ax2.set_xlabel(r"diffusion $D_\mathrm{vel}$, $\mathrm{(km/s)^3/kpc}$", fontsize=fontsize)
-            ax2.set_ylabel(r"distribution $f$, $\mathrm{kpc/(km/s)^3}$", fontsize=fontsize)
+            ax2.set_xlabel(r"diffusion $D_\mathrm{vel}^{\mathrm{calibration}}$ ($\mathrm{km\,s^{-1}})^3\,\mathrm{kpc^{-1}}$", fontsize=fontsize)
+            ax2.set_ylabel(r"distribution $f$ $\mathrm{kpc}\,(\mathrm{km\,s^{-1}})^{-3}$", fontsize=fontsize)
         else:
-            ax2.set_xlabel(r"diffusion $D_\mathrm{pos}$, $\mathrm{(km/s)^3/kpc}$", fontsize=fontsize)
-            ax2.set_ylabel(r"distribution $f$, $\mathrm{kpc/(km/s)^3}$", fontsize=fontsize)
-        ax2.legend(fontsize=fontsize*0.8, loc=0)
+            ax2.set_xlabel(r"diffusion $D_\mathrm{pos}^{\mathrm{calibration}}$ ($\mathrm{km\,s^{-1}})^3\,\mathrm{kpc^{-1}}$", fontsize=fontsize)
+            ax2.set_ylabel(r"distribution $f$ $\mathrm{kpc}\,(\mathrm{km\,s^{-1}})^{-3}$", fontsize=fontsize)
+        ax1.tick_params(which='major', length=0, labelsize=fontsize)
+        ax2.legend(
+            fontsize=fontsize*0.72, loc=0, framealpha=0.25,
+            borderpad=0.3, labelspacing=0.3, handlelength=1.6,
+        )
         ax2.tick_params(which='major', length=0, labelsize=fontsize)
         
         plt.tight_layout()
@@ -700,29 +954,29 @@ def plot_normalized_pdf_from_eachpoints_KDE(Diffu_data, Diffu_0, suffix="suffix"
     normalized_distribution = knn_kde_1d(Diffu_data, v_grid, k_neighbors)
     plt.plot(v_grid, normalized_distribution, 'o-', label='Normalized Distribution', color='b', lw=pointsize)
 
-    plt.plot([mean_val, mean_val], [0., np.max(normalized_distribution)], '--', label='Diffu_mean = {:.4f}'.format(mean_val), color='k', lw=pointsize)
-    plt.plot([median_val, median_val], [0., np.max(normalized_distribution)], '-.', label='Diffu_median = {:.4f}'.format(median_val), color='k', lw=pointsize)
+    plt.plot([mean_val, mean_val], [0., np.max(normalized_distribution)], '--', label='Mean = {:.4f}'.format(mean_val), color='k', lw=pointsize)
+    plt.plot([median_val, median_val], [0., np.max(normalized_distribution)], '-.', label='Median = {:.4f}'.format(median_val), color='k', lw=pointsize)
     if Diffu_0 is not None:
-        plt.plot([Diffu_0, Diffu_0], [0., np.max(normalized_distribution)], label='Diffu_0 = {:.4f}'.format(Diffu_0), color='k', lw=pointsize)
+        plt.plot([Diffu_0, Diffu_0], [0., np.max(normalized_distribution)], label='Chandrasekhar--BT classical reference = {:.4f}'.format(Diffu_0), color='k', lw=pointsize)
     
     plt.xscale("log")
     plt.yscale("log")
     # plt.title(r"histogram of main diffusion coefficient of all particles", fontsize=fontsize)
     if pos_or_vel == "vel":
-        plt.xlabel(r"diffusion $D_\mathrm{vel}$, $\mathrm{(km/s)^3/kpc}$", fontsize=fontsize)
+        plt.xlabel(r"diffusion $D_\mathrm{vel}^{\mathrm{calibration}}$ ($\mathrm{km\,s^{-1}})^3\,\mathrm{kpc^{-1}}$", fontsize=fontsize)
     else:
-        plt.xlabel(r"diffusion $D_\mathrm{pos}$, $\mathrm{(km/s)^3/kpc}$", fontsize=fontsize)
-    plt.ylabel(r"distribution $f$, $\mathrm{kpc/(km/s)^3}$", fontsize=fontsize)
+        plt.xlabel(r"diffusion $D_\mathrm{pos}^{\mathrm{calibration}}$ ($\mathrm{km\,s^{-1}})^3\,\mathrm{kpc^{-1}}$", fontsize=fontsize)
+    plt.ylabel(r"distribution $f$ $\mathrm{kpc}\,(\mathrm{km\,s^{-1}})^{-3}$", fontsize=fontsize)
     
     plt.legend(fontsize=fontsize*0.8, loc=0)
     plt.tick_params(which='major', length=0, labelsize=fontsize * 1.)
     plt.tight_layout()
     if pos_or_vel == "vel":
-        save_file = "../data/examples_vel/diffu_eff_DF_{}_KDE.eps".format(suffix)
+        save_file = "../data/examples_vel/diffu_eff_DF_{}_KDE.pdf".format(suffix)
     else:
-        save_file = "../data/examples_pos/diffu_r_DF_{}_KDE.eps".format(suffix)
+        save_file = "../data/examples_pos/diffu_r_DF_{}_KDE.pdf".format(suffix)
     fig_tmp = plt.gcf()
-    fig_tmp.savefig(save_file, format="eps", bbox_inches='tight')
+    fig_tmp.savefig(save_file, format="pdf", bbox_inches='tight')
     plt.close()
     
     print("Plot {}, done.".format(suffix))
@@ -750,10 +1004,10 @@ def plot_normalized_pdf_from_percentile(data, mean_val, median_val, Diffu_0, suf
     plt.grid(True)
 
     plt.plot(bin_centers, normalized_distribution, 'o-', label="Normalized DF", markersize=pointsize)
-    plt.plot([mean_val, mean_val], [0., np.max(normalized_distribution)], '--', label='Diffu_mean = {:.4f}'.format(mean_val), color='k', lw=pointsize)
-    plt.plot([median_val, median_val], [0., np.max(normalized_distribution)], '-.', label='Diffu_median = {:.4f}'.format(median_val), color='k', lw=pointsize)
+    plt.plot([mean_val, mean_val], [0., np.max(normalized_distribution)], '--', label='Mean = {:.4f}'.format(mean_val), color='k', lw=pointsize)
+    plt.plot([median_val, median_val], [0., np.max(normalized_distribution)], '-.', label='Median = {:.4f}'.format(median_val), color='k', lw=pointsize)
     if Diffu_0 is not None:
-        plt.plot([Diffu_0, Diffu_0], [0., np.max(normalized_distribution)], label='Diffu_0 = {:.4f}'.format(Diffu_0), color='k', lw=pointsize)
+        plt.plot([Diffu_0, Diffu_0], [0., np.max(normalized_distribution)], label='Chandrasekhar--BT classical reference = {:.4f}'.format(Diffu_0), color='k', lw=pointsize)
     
     # Set logarithmic scale for x and y axes
     plt.xscale("log")
@@ -762,20 +1016,20 @@ def plot_normalized_pdf_from_percentile(data, mean_val, median_val, Diffu_0, suf
     # Title and labels
     # plt.title(r"Histogram of main diffusion coefficient of all particles", fontsize=fontsize)
     if pos_or_vel == "vel":
-        plt.xlabel(r"Diffusion $D_\mathrm{vel}$, $\mathrm{(km/s)^3/kpc}$", fontsize=fontsize)
+        plt.xlabel(r"Diffusion $D_\mathrm{vel}^{\mathrm{calibration}}$ ($\mathrm{km\,s^{-1}})^3\,\mathrm{kpc^{-1}}$", fontsize=fontsize)
     else:
-        plt.xlabel(r"Diffusion $D_\mathrm{pos}$, $\mathrm{(km/s)^3/kpc}$", fontsize=fontsize)
-    plt.ylabel(r"Distribution $f$, $\mathrm{kpc/(km/s)^3}$", fontsize=fontsize)
+        plt.xlabel(r"Diffusion $D_\mathrm{pos}^{\mathrm{calibration}}$ ($\mathrm{km\,s^{-1}})^3\,\mathrm{kpc^{-1}}$", fontsize=fontsize)
+    plt.ylabel(r"Distribution $f$ $\mathrm{kpc}\,(\mathrm{km\,s^{-1}})^{-3}$", fontsize=fontsize)
 
     plt.legend(fontsize=fontsize*0.8, loc=0)
     plt.tick_params(which='major', length=0, labelsize=fontsize * 1.)
     plt.tight_layout()
     if pos_or_vel == "vel":
-        save_file = "../data/examples_vel/diffu_eff_DF_{}_percentile.eps".format(suffix)
+        save_file = "../data/examples_vel/diffu_eff_DF_{}_percentile.pdf".format(suffix)
     else:
-        save_file = "../data/examples_pos/diffu_r_DF_{}_percentile.eps".format(suffix)
+        save_file = "../data/examples_pos/diffu_r_DF_{}_percentile.pdf".format(suffix)
     fig_tmp = plt.gcf()
-    fig_tmp.savefig(save_file, format="eps", bbox_inches='tight')
+    fig_tmp.savefig(save_file, format="pdf", bbox_inches='tight')
     plt.close()
     print("Saved fig of diffueff_percentile.")
     return 0
@@ -870,9 +1124,8 @@ def plot_relaxation_time_with_N_and_dim_pos(
         diffu_N_arr_referencevalue[i] = diffusion_reference_value_Diffu_ref(N_particles=N_particles_arr[i], M_total=M_total, R0=R0, v0=v0)
         eta_N_arr_referencevalue[i] = eta_ralaxaiton_time_ratio(diffu_N_arr_referencevalue[i], R0, v0)
     
-    for j in np.arange(N_dimlb_plot):
-        for i in np.arange(N_points_plot):
-            eta_N_arr_count[j, i] = eta_ralaxaiton_time_ratio_frac(N_particles_arr[i], M_total, R0, v0, Dim_frac=Dim_frac_lb[j])
+    # The single-fractal analytic curves are intentionally not plotted in the
+    # publication relaxation-time comparison.
 
     plt.figure(figsize=figsize, dpi=dpi)
     plt.grid(True)
@@ -883,10 +1136,7 @@ def plot_relaxation_time_with_N_and_dim_pos(
     # colorj = ["red", "orange", "green", "blue", "purple"]
     colorj = ["r", "b", "k", "orange", "g"]
 
-    plt.plot(N_particles_arr, eta_N_arr_referencevalue, "-", label="by referencevalue", color="k", lw=pointsize*0.5)
-    for j in np.arange(N_dimlb_plot):
-        # ads.DEBUG_PRINT_V(1, j, eta_N_arr_count[j])
-        plt.plot(N_particles_arr, eta_N_arr_count[j], "-.", label="by single fractal model, Dim_frac={:.2f}".format(Dim_frac_lb[j]), color=colorj[j], lw=pointsize*0.5)
+    plt.plot(N_particles_arr, eta_N_arr_referencevalue, "-", label="Chandrasekhar--BT classical reference", color="k", lw=pointsize*0.5)
 
     dldl = [diffueff_uniform_median_list, diffueff_noised_median_list, ]
     for dl in dldl:
@@ -904,7 +1154,14 @@ def plot_relaxation_time_with_N_and_dim_pos(
             eta_diffu_list[i] = eta_ralaxaiton_time_ratio(diffueff_list[i], R0, v0)
         # ads.DEBUG_PRINT_V(1, diffueff_list, eta_diffu_list, "diffur")
         # plt.plot(N_list, eta_IR2_list, "-.", label="eta_IR2, Dim_frac={:.2f}".format(d), color=color[pos_type_name], lw=pointsize*0.5)
-        plt.scatter(N_list, eta_diffu_list, label="by median value of {}".format(pos_type_name), color=color[pos_type_name], s=pointsize*60., marker="*")
+        display_name = {
+            "pos_uniform": "Homogeneous random reference",
+            "pos_noised": "Fractal-like sample",
+        }.get(pos_type_name, pos_type_name)
+        plt.scatter(
+            N_list, eta_diffu_list, label=display_name,
+            color=color[pos_type_name], s=pointsize*60., marker="*"
+        )
     
     # dldl = [diffueff_uniform_meanvalue_list, diffueff_noised_meanvalue_list, ]
     # for dl in dldl:
@@ -933,7 +1190,7 @@ def plot_relaxation_time_with_N_and_dim_pos(
     plt.tick_params(which='major', length=0, labelsize=fontsize*0.8) #size of the number characters
     plt.tight_layout()
 
-    plt.savefig("../data/examples_pos/relaxation_time_with_N_and_dim_{}_with_ref.eps".format(suffix), format="eps", bbox_inches='tight')
+    plt.savefig("../data/examples_pos/relaxation_time_with_N_and_dim_{}_with_ref.pdf".format(suffix), format="pdf", bbox_inches='tight')
     plt.close()
     print("Saved fig of relaxation_time_with_N_and_dim_pos.")
     return 0
@@ -983,7 +1240,7 @@ def plot_relaxation_time_with_N_and_dim_vel(
     # for j in np.arange(N_dimlb_plot):
     #     plt.plot(N_particles_arr, eta_N_arr_count[j], "-.", label="eta_count, Dim_frac={:.2f}".format(Dim_frac_lb[j]), color=colorj[j], lw=pointsize*0.5)
 
-    plt.plot(N_particles_arr, eta_N_arr_referencevalue, "-", label="by referencevalue", color="k", lw=pointsize*0.5)
+    plt.plot(N_particles_arr, eta_N_arr_referencevalue, "-", label="Chandrasekhar--BT classical reference", color="k", lw=pointsize*0.5)
     
     dldl = [
         diffueff_iso_median_list, diffueff_aniso_median_list, diffueff_tail_median_list, 
@@ -1002,7 +1259,17 @@ def plot_relaxation_time_with_N_and_dim_vel(
         for i in np.arange(N_N_list):
             eta_diffu_list[i] = eta_ralaxaiton_time_ratio(diffueff_list[i], R0, v0)
         # ads.DEBUG_PRINT_V(1, diffueff_list, eta_diffu_list, "diffur")
-        plt.scatter(N_list, eta_diffu_list, label="by median of {}".format(pos_type_name), color=color[pos_type_name], s=pointsize*60., marker="*")
+        display_name = {
+            "vel_iso": "Isotropic Gaussian reference",
+            "vel_aniso": "Anisotropic Gaussian",
+            "vel_tail": "Gaussian + power-law tail",
+            "vel_noised": "Perlin-noised velocity sample",
+            "vel_composite": "Composite velocity sample",
+        }.get(pos_type_name, pos_type_name)
+        plt.scatter(
+            N_list, eta_diffu_list, label=display_name,
+            color=color[pos_type_name], s=pointsize*60., marker="*"
+        )
     
     # dldl = [
     #     diffueff_iso_mean_list, diffueff_aniso_mean_list, diffueff_tail_mean_list, 
@@ -1031,9 +1298,9 @@ def plot_relaxation_time_with_N_and_dim_vel(
     plt.legend(fontsize=fontsize*0.8, loc=0)
     plt.tick_params(which='major', length=0, labelsize=fontsize*0.8) #size of the number characters
     plt.tight_layout()
-    save_file = "../data/examples_vel/relaxation_time_with_N_and_dim_{}_with_ref.eps".format(suffix)
+    save_file = "../data/examples_vel/relaxation_time_with_N_and_dim_{}_with_ref.pdf".format(suffix)
     fig_tmp = plt.gcf()
-    fig_tmp.savefig(save_file, format="eps", bbox_inches='tight')
+    fig_tmp.savefig(save_file, format="pdf", bbox_inches='tight')
     plt.close()
     print("Saved fig of relaxation_time_with_N_and_dim_vel.")
     return 0
@@ -1080,7 +1347,7 @@ def zeta_linear_fitting_outer(counts, zeta, counts_targets, save_path, suffix="s
     # (4) Plot
     plt.figure(figsize=(6,5))
     pointsize = 2.
-    fontsize = 2.
+    fontsize = 12.
 
     plt.scatter(counts, zeta, label="data", marker='o', s=40, alpha=0.8)
     plt.scatter(counts_targets, zeta_targets, label="extrapolated", marker='x', s=60, c='C1')
@@ -1089,17 +1356,17 @@ def zeta_linear_fitting_outer(counts, zeta, counts_targets, save_path, suffix="s
     plt.xscale('log')
     # plt.yscale('log')
     plt.xlabel(r"Particle count $N$")
-    if suffix=="pos":
+    if suffix.endswith("pos"):
         plt.ylabel(r"Position-space enhancement ratio $\zeta_\mathrm{pos}$", fontsize=fontsize)
     else:
         plt.ylabel(r"Velocity-space enhancement ratio $\zeta_\mathrm{vel}$", fontsize=fontsize)
     plt.legend()
 
     plt.tight_layout()
-    save_file = save_path+"amplification_ratio_{}.eps".format(suffix)
+    save_file = save_path+"amplification_ratio_{}.pdf".format(suffix)
     fig_tmp = plt.gcf()
-    fig_tmp.savefig(save_file, format="eps", bbox_inches='tight')
-    # plt.show()
+    fig_tmp.savefig(save_file, format="pdf", bbox_inches='tight')
+    plt.close()
 
     return zeta_targets
 

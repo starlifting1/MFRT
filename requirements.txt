@@ -1,0 +1,13 @@
+astropy
+boxcounting
+matplotlib
+MFDFA
+noise
+numpy
+pandas
+PyWavelets
+scikit-fuzzy
+scikit-learn
+scipy
+tikzplotlib
+vegas

@@ -63,7 +63,7 @@ def generate_fractal_3D_vertex(num_points, fractal_dim, bounds=(-1, 1)):
 
 def generate_fractal_3D_walk(num_steps, dim): 
     '''
-    You can use algorithms such as the Random Walk, L-System, or Diffusion-Limited Aggregation (DLA) to create fractals.
+    One can use algorithms such as the Random Walk, L-System, or Diffusion-Limited Aggregation (DLA) to create fractals.
     For a desired dimension of 1.8, a random walk or a recursive structure may be best.
     ''' 
     steps = []  
@@ -358,8 +358,7 @@ def fit_fractal_dimension(radii_list, inside_counts_list, suffix="suffix", is_pl
             color='red', 
         )
 
-        plt.xlabel('log10 radius, kpc', fontsize=fontsize)
-        # plt.xlabel('$\log_{10}(r/\mathrm{kpc})$', fontsize=fontsize)
+        plt.xlabel(r'$\log_{10}(r/\mathrm{kpc})$', fontsize=fontsize)
         # plt.ylabel('log10 mean density', fontsize=fontsize)
         plt.ylabel('log10 shell-averaged count density', fontsize=fontsize)
         plt.tick_params(axis="both", labelsize=fontsize)
@@ -368,7 +367,7 @@ def fit_fractal_dimension(radii_list, inside_counts_list, suffix="suffix", is_pl
 
         # plt.title('Fractal Dimension Fit')
         # plt.show()
-        plt.savefig("{}./fractal_dimension_fit_{}.eps".format(savepath, suffix), format="eps", bbox_inches='tight')
+        plt.savefig("{}./fractal_dimension_fit_{}.pdf".format(savepath, suffix), format="pdf", bbox_inches='tight')
         plt.close()
     return popt
 

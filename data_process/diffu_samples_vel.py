@@ -20,13 +20,115 @@ import fit_speed_DF_tail as fst
 import diffu_calling_cpp as dcc
 
 
+PERLIN_MODIFIED_VELOCITY_TAGS = {"noised", "composite"}
+FRACTAL_DIMENSION_INDEX_PATH = "../data/fractal_dimension_by_figure.txt"
+
+
+def append_fractal_dimension_record(
+    records, figure_relative_path, tag, N_particles, Dim_frac,
+    displayed_on_figure, figure_kind, perlin_modified
+):
+    records.append({
+        "figure_relative_path": figure_relative_path,
+        "sample_type": "vel_{}".format(tag),
+        "N": N_particles,
+        "fitted_D_frac": Dim_frac,
+        "displayed_on_figure": displayed_on_figure,
+        "figure_kind": figure_kind,
+        "perlin_modified": perlin_modified,
+    })
+
+
+def build_vel_calibration_from_saved_iso(path_load, N_particles, M_total, R0, v0):
+    """Build the post-processing calibration from the saved isotropic raw median."""
+    file_iso_sta = path_load + "DiffuStatistics_vel_iso_N{}.txt".format(N_particles)
+    data_iso_sta = np.loadtxt(file_iso_sta, dtype=float)
+    if data_iso_sta.ndim != 2 or data_iso_sta.shape[0] < 8 or data_iso_sta.shape[1] < 4:
+        raise ValueError("unexpected velocity statistics format: {}".format(file_iso_sta))
+    iso_median_raw = data_iso_sta[0, 1]
+
+    file_iso_pers = path_load + "DiffuPers_vel_iso_N{}.txt".format(N_particles)
+    data_iso_pers = np.loadtxt(file_iso_pers, dtype=float)
+    q50 = data_iso_pers[np.isclose(data_iso_pers[:, 0], 0.5), 1]
+    if q50.size != 1 or not np.isclose(q50[0], iso_median_raw, rtol=5.0e-6):
+        raise ValueError("velocity statistics median and saved q=0.5 disagree for N={}".format(N_particles))
+
+    return dbc.build_classical_limit_calibration(
+        N_particles, M_total, R0, v0, iso_median_raw, pos_or_vel="vel"
+    )
+
+
+def prepare_vel_calibration_diagnostics(
+    path_load, path_save, N_particles_list, M_total, R0, v0
+):
+    """Write and validate velocity calibration diagnostics before any plotting."""
+    calibration_by_N = {}
+    rows = []
+    for N_particles in N_particles_list:
+        calibration_info = build_vel_calibration_from_saved_iso(
+            path_load, N_particles, M_total, R0, v0
+        )
+        calibration_by_N[int(N_particles)] = calibration_info
+
+        modified_stats_file = path_load + "DiffuStatistics_vel_composite_N{}.txt".format(
+            N_particles
+        )
+        modified_stats = np.loadtxt(modified_stats_file, dtype=float)
+        if modified_stats.ndim != 2 or modified_stats.shape[0] < 8 or modified_stats.shape[1] < 4:
+            raise ValueError("unexpected velocity statistics format: {}".format(modified_stats_file))
+        modified_median_raw = float(modified_stats[0, 1])
+        iso_median_raw = calibration_info["reference_median_raw"]
+        iso_median_calibration = float(
+            dbc.apply_diffusion_calibration(iso_median_raw, calibration_info)
+        )
+        modified_median_calibration = float(
+            dbc.apply_diffusion_calibration(modified_median_raw, calibration_info)
+        )
+        zeta_raw = modified_median_raw / iso_median_raw
+        zeta_calibration = modified_median_calibration / iso_median_calibration
+        reference_relative_error = abs(
+            iso_median_calibration / calibration_info["D_classical"] - 1.0
+        )
+        zeta_absolute_error = abs(zeta_calibration - zeta_raw)
+
+        rows.append([
+            N_particles,
+            calibration_info["D_classical"],
+            iso_median_raw,
+            calibration_info["C_calibration"],
+            iso_median_calibration,
+            zeta_raw,
+            zeta_calibration,
+            reference_relative_error,
+            zeta_absolute_error,
+        ])
+
+    rows = np.asarray(rows, dtype=float)
+    diagnostic_path = path_save + "calibration_vel.txt"
+    np.savetxt(
+        diagnostic_path,
+        rows,
+        header=(
+            "N D_classical median_vel_iso_raw C_v "
+            "median_vel_iso_calibration zeta_v_raw zeta_v_calibration "
+            "reference_relative_error zeta_absolute_error"
+        ),
+        fmt="%.17e",
+    )
+    validation = dbc.validate_calibration_diagnostics(
+        rows[:, 0], rows[:, 1], rows[:, 4], rows[:, 5], rows[:, 6], rows[:, 3]
+    )
+    print("velocity calibration diagnostics passed:", validation)
+    print("wrote", diagnostic_path)
+    return calibration_by_N, rows, validation
+
 
 ## main
 if __name__ == '__main__':
 
     #### Step 1. settings
     R0 = dbc.R0_scale
-    Rm = R0/dbc.lambda3
+    Rm = R0/dbc.lambda2
     M_total = dbc.M_total_gal_1e10MSun
     v0 = np.sqrt(dbc.G*M_total/dbc.frac_mass/R0)
     
@@ -92,6 +194,12 @@ if __name__ == '__main__':
     diffueff_median_pt = list(range(len(N_particles_list)))
     diffueff_mean_pt = list(range(len(N_particles_list)))
     Dim_frac_list_pt = list(range(len(N_particles_list)))
+    fractal_dimension_records = []
+    calibration_by_N, calibration_rows_vel, calibration_validation_vel = (
+        prepare_vel_calibration_diagnostics(
+            path_load, path_save, N_particles_list, M_total, R0, v0
+        )
+    )
     
     for (i_np, N_particles) in enumerate(N_particles_list):
         #: prepare arguments
@@ -124,8 +232,18 @@ if __name__ == '__main__':
                 path_save+"nohup.out"
             )
 
+        calibration_info_vel = calibration_by_N[int(N_particles)]
+        print("velocity calibration:", calibration_info_vel)
+
         #: load files and plot each sample
         tag_list = ["iso", "aniso", "tail", "noised", "composite"]
+        sample_type_labels = {
+            "iso": "Isotropic Gaussian",
+            "aniso": "Anisotropic Gaussian",
+            "tail": "Gaussian + power-law tail",
+            "noised": "Fractal-like",
+            "composite": "Anisotropic + tail + fractal-like",
+        }
         vel_list = list(range(len(tag_list)))
         label_list = list(range(len(tag_list)))
         label_N = "N{}".format(N_particles)
@@ -148,20 +266,42 @@ if __name__ == '__main__':
                 vel = np.loadtxt(file_vel, dtype=float)[:, 3:6]
                 vel_list[i_tag] = vel
                 data_diffu_each = np.loadtxt(file_diffu_each, dtype=float)
+                # Column 0 is the particle ID; all diffusion-tensor columns share
+                # the same classical-limit calibration factor.
+                data_diffu_each[:, 1:] = dbc.apply_diffusion_calibration(
+                    data_diffu_each[:, 1:], calibration_info_vel
+                )
                 data_diffu_eff_each = data_diffu_each[:, 1]
                 
             data_nr = np.loadtxt(file_nr, dtype=float)
             radii, inside_counts = data_nr[:, 0], data_nr[:, 1]
+            perlin_modified = tag in PERLIN_MODIFIED_VELOCITY_TAGS
+            plot_fractal_fit = is_enable_plot_each and perlin_modified
             h_frac, Dim_frac = gfs.calculate_mean_neareast_count_load(
-                radii, inside_counts, save_path=path_save, suffix=suffix, is_plot=is_enable_plot_each
+                radii, inside_counts, save_path=path_save, suffix=suffix,
+                is_plot=plot_fractal_fit
             )
+            if plot_fractal_fit:
+                append_fractal_dimension_record(
+                    fractal_dimension_records,
+                    "data/examples_vel/fractal_dimension_fit_{}.pdf".format(suffix),
+                    tag, N_particles, Dim_frac, True,
+                    "fractal_dimension_fit", perlin_modified,
+                )
             
             data_diffu_sta = np.loadtxt(file_diffu_sta, dtype=float)
-            diffu_eff_mean = data_diffu_sta[0, 0]
-            diffu_eff_median = data_diffu_sta[0, 1]
-            diffu_eff_0 = data_diffu_sta[7, 1]
+            diffu_eff_mean = float(dbc.apply_diffusion_calibration(
+                data_diffu_sta[0, 0], calibration_info_vel
+            ))
+            diffu_eff_median = float(dbc.apply_diffusion_calibration(
+                data_diffu_sta[0, 1], calibration_info_vel
+            ))
+            diffu_eff_0 = calibration_info_vel["D_classical"]
             data_diffu_pers = np.loadtxt(file_diffu_pers, dtype=float)
-            label_list[i_tag] = suffix
+            data_diffu_pers[:, 1] = dbc.apply_diffusion_calibration(
+                data_diffu_pers[:, 1], calibration_info_vel
+            )
+            label_list[i_tag] = sample_type_labels[tag]
             diffueff_median_list[i_tag] = diffu_eff_median
             diffueff_mean_list[i_tag] = diffu_eff_mean
             Dim_frac_list[i_tag] = Dim_frac
@@ -169,13 +309,40 @@ if __name__ == '__main__':
 
             if is_enable_plot_each and N_particles<=100000: #much time to plot
                 k_neighbors = int(32*N_particles/1e4)
-                dbc.plot_sample_3D_pos_or_vel(vel, path_save, Dim_frac=Dim_frac, suffix=suffix)
+                Dim_frac_plot = Dim_frac if perlin_modified else None
+                dbc.plot_sample_3D_pos_or_vel(
+                    vel, path_save, Dim_frac=Dim_frac_plot, suffix=suffix
+                )
                 dbc.plot_velocity_DF_contour_compare([vel], [suffix], save_path=path_save)
                 dbc.plot_normalized_pdf_components(
                     data_diffu_each, label_components, diffu_eff_0, suffix=suffix, k_neighbors=k_neighbors
                 )
                 dbc.plot_normalized_pdf_from_eachpoints_histogram_vel_data(
                     data_diffu_eff_each, diffu_eff_0, suffix=suffix, vel_data=vel
+                )
+                append_fractal_dimension_record(
+                    fractal_dimension_records,
+                    "data/examples_vel/samplepoints_vel_{}.pdf".format(suffix),
+                    tag, N_particles, Dim_frac, perlin_modified,
+                    "3D_scatter", perlin_modified,
+                )
+                append_fractal_dimension_record(
+                    fractal_dimension_records,
+                    "data/examples_vel/diffu_eff_DF_{}_histogram.pdf".format(suffix),
+                    tag, N_particles, Dim_frac, False,
+                    "diffusion_histogram", perlin_modified,
+                )
+                append_fractal_dimension_record(
+                    fractal_dimension_records,
+                    "data/examples_vel/diffu_v_components_DF_{}.pdf".format(suffix),
+                    tag, N_particles, Dim_frac, False,
+                    "diffusion_tensor_components", perlin_modified,
+                )
+                append_fractal_dimension_record(
+                    fractal_dimension_records,
+                    "data/examples_vel/velocity_DF_contour_compare_{}.pdf".format(suffix),
+                    tag, N_particles, Dim_frac, False,
+                    "velocity_density_contour", perlin_modified,
                 )
                 # dbc.plot_normalized_pdf_from_eachpoints_KDE(
                 #     data_diffu_eff_each, diffu_eff_0, suffix=suffix, k_neighbors=k_neighbors
@@ -197,6 +364,10 @@ if __name__ == '__main__':
         Dim_frac_list_pt[i_np] = Dim_frac_list
         print("N_particles {}, end.".format(N_particles))
         # exit(0) #debug #xxx compare tree, xxx eta and zeta
+
+    dbc.update_fractal_dimension_figure_index(
+        fractal_dimension_records, FRACTAL_DIMENSION_INDEX_PATH, "velocity"
+    )
 
     #: plot eta_N about relaxation time for N_particles
     diffueff_median_pt = np.array(diffueff_median_pt)
@@ -279,3 +450,8 @@ if __name__ == '__main__':
     zeta_versus_N = np.hstack((np.array([N_particles_list]).T, np.array([zeta_vel]).T))
     np.savetxt(path_save+"zeta_vel.txt", zeta_versus_N)
     ads.DEBUG_PRINT_V(1, zeta_versus_N, "zeta_vel")
+
+    dbc.zeta_linear_fitting_outer(
+        N_particles_list, zeta_vel, [1.0e11],
+        save_path="../data/examples_pos/", suffix="zeta_vel"
+    )

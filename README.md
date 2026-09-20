@@ -1,16 +1,14 @@
-#README (infinished)
+# README
 
-# Introduction
+## Introduction
 
-MFRT is program to compare the the two-body collisional relaxation time of usual DF (uniform DF or simulated DF) and noised DF (Multi-Fraction structured DF, i.e. adding Perlin noise to position space and velocity space) of galaxy.
+MFRT is program to compare the the two-body collisional relaxation time of reference DF (homogeneous DF or simulated DF) and modified DF (fractal substructured DF, i.e. adding Perlin noise to position space) of a galaxy particle sample.
 
 Author: Jianyu Gu et al.
 
-MFRT/diff_r_sample_each/: path to compute the the two-body collisional diffusion coefficient for each particles of Multi-Fraction structured galaxy.
+`MFRT/diff_r_sample_each/`: path to compute the the two-body collisional diffusion coefficient for each particles of fractal substructured galaxy.
 
-MFRT/data_process/: path to data process and plot.
-
-# Installation and running
+`MFRT/data_process/`: path to data process and plot.
 
 ## Installation
 

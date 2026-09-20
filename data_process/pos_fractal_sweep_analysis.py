@@ -6,6 +6,7 @@ import math
 from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.optimize import least_squares
 import generate_fractal_sample as gfs
 
 
@@ -90,37 +91,57 @@ def write_analysis_table(records, output_path):
 
 
 
-def plot_ERDC_vs_dimension(records, output_path):
+def model_endpoint_constrained(D_frac, N, q):
+    """Empirical trend constrained to zeta_r(0)=N and zeta_r(3)=1."""
+    scaled_dimension = np.clip(np.asarray(D_frac, dtype=float) / 3.0, 0.0, 1.0)
+    return N ** ((1.0 - scaled_dimension) ** q)
+
+
+def plot_ERDC_vs_dimension(
+    records, output_path, N, fitted_q, q_lower_uncertainty, q_upper_uncertainty
+):
 
     fig, ax = plt.subplots(figsize=(10, 8))
     fontsize = 24
     pointsize = 20
     
     perlin = [record for record in records if record["sample_type"] == "perlin"]
-    reference = [record for record in records if record["sample_type"] == "reference"]
 
     if perlin:
-        iterations = np.array([record["N_iter"] for record in perlin], dtype=float)
-        scatter = ax.scatter(
+        ax.scatter(
             [record["Dim_frac"] for record in perlin],
             [record["ERDC_median"] for record in perlin],
-            # c=iterations, 
-            cmap="viridis", s=pointsize, edgecolors="black", linewidths=0.5,
-            label="fractal samples",
+            s=pointsize, edgecolors="black", linewidths=0.5,
+            label="fractal-like samples",
         )
-        # colorbar = fig.colorbar(scatter, ax=ax)
-        # colorbar.set_label("Perlin iterations", fontsize=16)
     else:
         raise ValueError("No samples data.")
 
+    dimension_grid = np.linspace(0.0, 3.0, 800)
+    ax.plot(
+        dimension_grid,
+        model_endpoint_constrained(dimension_grid, N, fitted_q),
+        linewidth=2.5,
+        label=(
+            rf"Empirical fit "
+            rf"($q={fitted_q:.2f}^{{+{q_upper_uncertainty:.2f}}}"
+            rf"_{{-{q_lower_uncertainty:.2f}}}$)"
+        ),
+    )
+    ax.scatter(
+        [0.0, 3.0], [N, 1.0], marker="x", s=75, linewidths=2,
+        label="imposed endpoints",
+    )
     ax.axhline(1.0, color="k", linewidth=pointsize/10, linestyle="--")
     
     ax.set_xlabel(r"Fitted fractal dimension $D_\mathrm{frac}$", fontsize=fontsize)
-    ax.set_ylabel(r"Position-space enhancement ratio $\zeta_\mathrm{pos}$", fontsize=fontsize)
+    ax.set_ylabel(r"Position-space enhancement ratio $\zeta_r$", fontsize=fontsize)
     ax.set_yscale("log")
+    ax.set_xlim(-0.02, 3.02)
+    ax.set_ylim(0.8, 1.5 * N)
     ax.grid(True, alpha=0.3)
     ax.tick_params(labelsize=fontsize)
-    ax.legend(fontsize=fontsize, loc="best")
+    ax.legend(fontsize=17, loc="best")
     fig.tight_layout()
     fig.savefig(output_path, format="pdf", dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -216,7 +237,103 @@ def main():
         )
 
     write_analysis_table(records, output_dir / "pos_fractal_erdc_vs_dfrac.txt")
-    plot_ERDC_vs_dimension(records, output_dir / "ERDC_pos_versus_dim_frac.pdf")
+
+    # Fit the endpoint-constrained empirical trend to the actual sweep results.
+    # The residuals are evaluated in log(zeta_r), as in the exploratory QA fit.
+    perlin_records = [record for record in records if record["sample_type"] == "perlin"]
+    if not perlin_records:
+        raise ValueError("No perlin samples available for the ERDC fit.")
+
+    particle_counts = {record["N"] for record in perlin_records}
+    if len(particle_counts) != 1:
+        raise ValueError(f"Expected one fixed particle count, found: {sorted(particle_counts)}")
+    particle_count = float(particle_counts.pop())
+
+    dimensions = np.array([record["Dim_frac"] for record in perlin_records], dtype=float)
+    enhancements = np.array([record["ERDC_median"] for record in perlin_records], dtype=float)
+    if np.any((dimensions < 0.0) | (dimensions > 3.0)):
+        raise ValueError("The endpoint-constrained fit requires 0 <= D_frac <= 3.")
+    if np.any(enhancements <= 0.0):
+        raise ValueError("The log-space fit requires positive enhancement ratios.")
+
+    fit_result = least_squares(
+        lambda parameters: (
+            np.log(model_endpoint_constrained(dimensions, particle_count, parameters[0]))
+            - np.log(enhancements)
+        ),
+        x0=[4.0],
+        bounds=([0.01], [50.0]),
+        loss="soft_l1",
+        f_scale=0.3,
+    )
+    if not fit_result.success:
+        raise RuntimeError(f"ERDC fit failed: {fit_result.message}")
+
+    fitted_q = float(fit_result.x[0])
+    residual_dex = (
+        np.log10(model_endpoint_constrained(dimensions, particle_count, fitted_q))
+        - np.log10(enhancements)
+    )
+    rmse_dex = float(np.sqrt(np.mean(residual_dex**2)))
+
+    # Point-wise non-parametric bootstrap uncertainty for q. The fixed seed makes
+    # the reported central 68% interval reproducible.
+    bootstrap_rng = np.random.default_rng(20260906)
+    bootstrap_q = np.empty(500, dtype=float)
+    for bootstrap_index in range(bootstrap_q.size):
+        sample_indices = bootstrap_rng.integers(
+            0, len(perlin_records), size=len(perlin_records)
+        )
+        bootstrap_dimensions = dimensions[sample_indices]
+        bootstrap_enhancements = enhancements[sample_indices]
+        bootstrap_result = least_squares(
+            lambda parameters: (
+                np.log(
+                    model_endpoint_constrained(
+                        bootstrap_dimensions, particle_count, parameters[0]
+                    )
+                )
+                - np.log(bootstrap_enhancements)
+            ),
+            x0=[fitted_q],
+            bounds=([0.01], [50.0]),
+            loss="soft_l1",
+            f_scale=0.3,
+        )
+        if not bootstrap_result.success:
+            raise RuntimeError(
+                f"Bootstrap ERDC fit {bootstrap_index} failed: "
+                f"{bootstrap_result.message}"
+            )
+        bootstrap_q[bootstrap_index] = bootstrap_result.x[0]
+
+    q_lower, q_upper = np.percentile(bootstrap_q, [16.0, 84.0])
+    q_lower_uncertainty = float(fitted_q - q_lower)
+    q_upper_uncertainty = float(q_upper - fitted_q)
+    print(
+        f"Endpoint-constrained fit: q={fitted_q:.8f} "
+        f"(-{q_lower_uncertainty:.8f}, +{q_upper_uncertainty:.8f}; "
+        f"central 68% bootstrap interval), log-space RMSE={rmse_dex:.6f} dex"
+    )
+
+    figure_path = output_dir / "ERDC_pos_versus_dim_frac.pdf"
+    plot_ERDC_vs_dimension(
+        records,
+        figure_path,
+        particle_count,
+        fitted_q,
+        q_lower_uncertainty,
+        q_upper_uncertainty,
+    )
+    # Also write the stable path used when collecting paper-facing figures.
+    plot_ERDC_vs_dimension(
+        records,
+        DEFAULT_OUTPUT_ROOT / "ERDC_pos_versus_dim_frac.pdf",
+        particle_count,
+        fitted_q,
+        q_lower_uncertainty,
+        q_upper_uncertainty,
+    )
     # plot_positions_xy(records, output_dir / "fig_positions_xy_all_samples.pdf")
     print(f"Wrote Step 2 products to: {output_dir}")
 

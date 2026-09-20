@@ -14,7 +14,7 @@ import analysis_data_distribution as ads
 
 import os
 import subprocess
-# Optionally, import logging if you want to use logging instead of print
+# Optionally, import logging if using logging instead of print
 # import logging
 # logging.basicConfig(level=logging.INFO)
 

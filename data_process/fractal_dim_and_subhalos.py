@@ -482,7 +482,7 @@ def wavelet_position_versus_density(data, grid_size):
 def fracal_analysis_by_MFDFA(signal_1d):
     from MFDFA import MFDFA
 
-    # Assuming you have an (n, 4)-array where the first 3 columns are positions (x, y, z)
+    # Assuming an (n, 4)-array where the first 3 columns are positions (x, y, z)
     # and the 4th column is the density at those positions.
     # For simplicity, let's assume we are working with the 1D density data already
 

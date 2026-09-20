@@ -16,8 +16,125 @@ import generate_fractal_sample as gfs
 import diffu_calling_cpp as dcc
 
 
+PERLIN_MODIFIED_POSITION_TAGS = {"noised"}
+FRACTAL_DIMENSION_INDEX_PATH = "../data/fractal_dimension_by_figure.txt"
 
-def load_and_plot_pos_workflow(path_load, snapshot_name, tag, N_particles, N_iter, is_by_generating, is_enable_plot_each=True):
+
+def append_fractal_dimension_record(
+    records, figure_relative_path, snapshot_name, N_particles, Dim_frac,
+    displayed_on_figure, figure_kind, perlin_modified
+):
+    if records is None:
+        return
+    sample_type = (
+        snapshot_name[len("type_"):]
+        if snapshot_name.startswith("type_") else snapshot_name
+    )
+    records.append({
+        "figure_relative_path": figure_relative_path,
+        "sample_type": sample_type,
+        "N": N_particles,
+        "fitted_D_frac": Dim_frac,
+        "displayed_on_figure": displayed_on_figure,
+        "figure_kind": figure_kind,
+        "perlin_modified": perlin_modified,
+    })
+
+
+
+def build_pos_calibration_from_saved_uniform(path_load, N_particles, M_total, R0, v0):
+    """Build the post-processing calibration from the saved uniform raw median."""
+    file_uniform_sta = path_load + "DiffuStatistics_pos_type_uniform_N{}.txt".format(N_particles)
+    data_uniform_sta = np.loadtxt(file_uniform_sta, dtype=float)
+    if data_uniform_sta.ndim != 1 or data_uniform_sta.size < 4:
+        raise ValueError("unexpected position statistics format: {}".format(file_uniform_sta))
+    uniform_median_raw = data_uniform_sta[3]
+
+    file_uniform_pers = path_load + "DiffuPers_pos_type_uniform_N{}.txt".format(N_particles)
+    data_uniform_pers = np.loadtxt(file_uniform_pers, dtype=float)
+    q50 = data_uniform_pers[np.isclose(data_uniform_pers[:, 0], 0.5), 1]
+    if q50.size != 1 or not np.isclose(q50[0], uniform_median_raw, rtol=5.0e-6):
+        raise ValueError("position statistics median and saved q=0.5 disagree for N={}".format(N_particles))
+
+    return dbc.build_classical_limit_calibration(
+        N_particles, M_total, R0, v0, uniform_median_raw, pos_or_vel="pos"
+    )
+
+
+def prepare_pos_calibration_diagnostics(
+    path_load, path_save, N_particles_list, M_total, R0, v0
+):
+    """Write and validate position calibration diagnostics before any plotting."""
+    calibration_by_N = {}
+    rows = []
+    for N_particles in N_particles_list:
+        calibration_info = build_pos_calibration_from_saved_uniform(
+            path_load, N_particles, M_total, R0, v0
+        )
+        calibration_by_N[int(N_particles)] = calibration_info
+
+        modified_stats_file = path_load + "DiffuStatistics_pos_type_noised_N{}.txt".format(
+            N_particles
+        )
+        modified_stats = np.loadtxt(modified_stats_file, dtype=float)
+        if modified_stats.ndim != 1 or modified_stats.size < 4:
+            raise ValueError("unexpected position statistics format: {}".format(modified_stats_file))
+        modified_median_raw = float(modified_stats[3])
+        uniform_median_raw = calibration_info["reference_median_raw"]
+        uniform_median_calibration = float(
+            dbc.apply_diffusion_calibration(uniform_median_raw, calibration_info)
+        )
+        modified_median_calibration = float(
+            dbc.apply_diffusion_calibration(modified_median_raw, calibration_info)
+        )
+        zeta_raw = modified_median_raw / uniform_median_raw
+        zeta_calibration = modified_median_calibration / uniform_median_calibration
+        reference_relative_error = abs(
+            uniform_median_calibration / calibration_info["D_classical"] - 1.0
+        )
+        zeta_absolute_error = abs(zeta_calibration - zeta_raw)
+
+        rows.append([
+            N_particles,
+            calibration_info["D_classical"],
+            uniform_median_raw,
+            calibration_info["formula_correction"],
+            calibration_info["C_calibration"],
+            calibration_info["total_factor"],
+            uniform_median_calibration,
+            zeta_raw,
+            zeta_calibration,
+            reference_relative_error,
+            zeta_absolute_error,
+            float(calibration_info["legacy_position_gxx_correction_enabled"]),
+        ])
+
+    rows = np.asarray(rows, dtype=float)
+    diagnostic_path = path_save + "calibration_pos.txt"
+    np.savetxt(
+        diagnostic_path,
+        rows,
+        header=(
+            "N D_classical median_pos_uniform_raw GXX_correction_factor "
+            "C_r_after_GXX total_position_calibration_factor "
+            "median_pos_uniform_calibration zeta_r_raw zeta_r_calibration "
+            "reference_relative_error zeta_absolute_error "
+            "legacy_position_gxx_correction_enabled"
+        ),
+        fmt="%.17e",
+    )
+    validation = dbc.validate_calibration_diagnostics(
+        rows[:, 0], rows[:, 1], rows[:, 6], rows[:, 7], rows[:, 8], rows[:, 5]
+    )
+    print("position calibration diagnostics passed:", validation)
+    print("wrote", diagnostic_path)
+    return calibration_by_N, rows, validation
+
+
+def load_and_plot_pos_workflow(
+    path_load, snapshot_name, tag, N_particles, N_iter, is_by_generating,
+    calibration_info, is_enable_plot_each=True, fractal_dimension_records=None
+):
     tag_N = "_N"+str(N_particles)
     file_vel = None
     if not is_by_generating:
@@ -43,15 +160,33 @@ def load_and_plot_pos_workflow(path_load, snapshot_name, tag, N_particles, N_ite
     
     data_nr = np.loadtxt(file_nr, dtype=float)
     radii, inside_counts = data_nr[:, 0], data_nr[:, 1]
+    perlin_modified = tag in PERLIN_MODIFIED_POSITION_TAGS
+    plot_fractal_fit = is_enable_plot_each and perlin_modified
     h_frac, Dim_frac = gfs.calculate_mean_neareast_count_load(
-        radii, inside_counts, save_path=path_save, suffix=suffix, is_plot=is_enable_plot_each
+        radii, inside_counts, save_path=path_save, suffix=suffix,
+        is_plot=plot_fractal_fit
     )
-    
+    if plot_fractal_fit:
+        append_fractal_dimension_record(
+            fractal_dimension_records,
+            "data/examples_pos/fractal_dimension_fit_{}.pdf".format(suffix),
+            snapshot_name, N_particles, Dim_frac, True,
+            "fractal_dimension_fit", perlin_modified,
+        )
+
+    if data_diffu_eff_each is not None:
+        data_diffu_eff_each = dbc.apply_diffusion_calibration(
+            data_diffu_eff_each, calibration_info
+        )
+
     data_diffu_sta = np.loadtxt(file_diffu_sta, dtype=float)
-    diffu_eff_mean = data_diffu_sta[2]
-    diffu_eff_median = data_diffu_sta[3]
-    diffu_eff_0 = data_diffu_sta[1]
+    diffu_eff_mean = float(dbc.apply_diffusion_calibration(data_diffu_sta[2], calibration_info))
+    diffu_eff_median = float(dbc.apply_diffusion_calibration(data_diffu_sta[3], calibration_info))
+    diffu_eff_0 = calibration_info["D_classical"]
     data_diffu_pers = np.loadtxt(file_diffu_pers, dtype=float)
+    data_diffu_pers[:, 1] = dbc.apply_diffusion_calibration(
+        data_diffu_pers[:, 1], calibration_info
+    )
     # label_list[i_tag] = suffix
     # diffueff_median_list[i_tag] = diffu_eff_median
     # diffueff_mean_list[i_tag] = diffu_eff_mean
@@ -59,10 +194,25 @@ def load_and_plot_pos_workflow(path_load, snapshot_name, tag, N_particles, N_ite
     ads.DEBUG_PRINT_V(1, diffu_eff_median, Dim_frac, "Dim_frac")
 
     if is_enable_plot_each and N_particles<=100000: #much time to plot
-        dbc.plot_sample_3D_pos_or_vel(vel, path_save, Dim_frac=Dim_frac, suffix=suffix, pos_or_vel="pos")
+        Dim_frac_plot = Dim_frac if perlin_modified else None
+        dbc.plot_sample_3D_pos_or_vel(
+            vel, path_save, Dim_frac=Dim_frac_plot, suffix=suffix, pos_or_vel="pos"
+        )
         dbc.plot_velocity_DF_contour_compare([vel], [suffix], save_path=path_save, pos_or_vel="pos")
         dbc.plot_normalized_pdf_from_eachpoints_histogram_vel_data(
             data_diffu_eff_each, diffu_eff_0, suffix=suffix, pos_or_vel="pos"
+        )
+        append_fractal_dimension_record(
+            fractal_dimension_records,
+            "data/examples_pos/samplepoints_pos_{}.pdf".format(suffix),
+            snapshot_name, N_particles, Dim_frac, perlin_modified,
+            "3D_scatter", perlin_modified,
+        )
+        append_fractal_dimension_record(
+            fractal_dimension_records,
+            "data/examples_pos/diffu_r_DF_{}_histogram.pdf".format(suffix),
+            snapshot_name, N_particles, Dim_frac, False,
+            "diffusion_histogram", perlin_modified,
         )
         # dbc.plot_normalized_pdf_from_eachpoints_KDE(data_diffu_eff_each, diffu_eff_0, suffix=suffix, pos_or_vel="pos")
         # dbc.plot_normalized_pdf_from_percentile(
@@ -75,42 +225,12 @@ def load_and_plot_pos_workflow(path_load, snapshot_name, tag, N_particles, N_ite
 ## main
 if __name__ == '__main__':
 
-    # 1. load data
-    ## simulation data
-    # snapshot_ID = 80
-    snapshot_ID = 120
-    data_path = "../data/samples_simulated/snapshot_%03d_example_merge.txt"%(snapshot_ID)
-    # data_path = "../data/samples_simulated/snapshot_010_example_NFW.txt"
-    # data_path = "../data/snapshot_010_big.txt"
-    data = np.loadtxt(data_path, dtype=float)
-    N_particles_data = len(data)
-    pos_simu_original = data[:, 0:3]*1.
-    # data = None #to dicard big memory
-    ads.DEBUG_PRINT_V(1, np.shape(pos_simu_original), dci.get_mean_radius(pos_simu_original), "pos_simu_original")
-
-    # snapshot_ID = 20
-    snapshot_ID = 40
-    data_path = "../data/samples_simulated/snapshot_%03d_example_merge.txt"%(snapshot_ID)
-    data = np.loadtxt(data_path, dtype=float)
-    N_particles_data = len(data)
-    pos_simu_original_ubstable = data[:, 0:3]*1.
-    data = None #to dicard big memory
-    ads.DEBUG_PRINT_V(1, np.shape(pos_simu_original_ubstable), dci.get_mean_radius(pos_simu_original_ubstable), "pos_simu_original_ubstable")
-
-    ## Gaia data some range
-    # file_path_pos = "../data/stellar_data_pos.csv"
-    file_path_pos = odp.file_path_6D_Cartesian
-    pos_obs_original = pd.read_csv(file_path_pos).to_numpy()[:,0:3]
-    # pos_obs_read_center = np.mean(pos_obs_original, axis=0)
-    ads.DEBUG_PRINT_V(1, np.shape(pos_obs_original), dci.get_mean_radius(pos_obs_original), "pos_obs_original")
-
-
-
-    # 2. process data
+    # Process only saved raw diffusion data unless the optional historical
+    # observed/simulated branches are explicitly enabled below.
     ## total positions
     #### Step 1. settings
     R0 = dbc.R0_scale
-    Rm = R0/dbc.lambda3
+    Rm = R0/dbc.lambda2
     M_total = dbc.M_total_gal_1e10MSun
     v0 = np.sqrt(dbc.G*M_total/dbc.frac_mass/R0) #set the typical speed as the virial speed
     v2m_sqrt = v0 #set the mean speed as the virial speed
@@ -177,6 +297,42 @@ if __name__ == '__main__':
     Dim_frac_list = np.zeros_like(h_frac_list)
     diffu_eff_mean_list = np.zeros_like(h_frac_list)
     diffu_eff_median_list = np.zeros_like(h_frac_list)
+    fractal_dimension_records = []
+    calibration_by_N, calibration_rows_pos, calibration_validation_pos = (
+        prepare_pos_calibration_diagnostics(
+            path_load, path_save, N_particles_list, M_total, R0, v0
+        )
+    )
+
+    pos_simu_original = None
+    pos_simu_original_ubstable = None
+    pos_obs_original = None
+    if is_run_different_types:
+        snapshot_ID = 120
+        data_path = "../data/samples_simulated/snapshot_%03d_example_merge.txt" % snapshot_ID
+        data = np.loadtxt(data_path, dtype=float)
+        pos_simu_original = data[:, 0:3].copy()
+        ads.DEBUG_PRINT_V(
+            1, np.shape(pos_simu_original), dci.get_mean_radius(pos_simu_original),
+            "pos_simu_original"
+        )
+
+        snapshot_ID = 40
+        data_path = "../data/samples_simulated/snapshot_%03d_example_merge.txt" % snapshot_ID
+        data = np.loadtxt(data_path, dtype=float)
+        pos_simu_original_ubstable = data[:, 0:3].copy()
+        data = None
+        ads.DEBUG_PRINT_V(
+            1, np.shape(pos_simu_original_ubstable),
+            dci.get_mean_radius(pos_simu_original_ubstable),
+            "pos_simu_original_ubstable"
+        )
+
+        pos_obs_original = pd.read_csv(odp.file_path_6D_Cartesian).to_numpy()[:, 0:3]
+        ads.DEBUG_PRINT_V(
+            1, np.shape(pos_obs_original), dci.get_mean_radius(pos_obs_original),
+            "pos_obs_original"
+        )
 
     for (i_np, N_particles) in enumerate(N_particles_list):
 
@@ -220,10 +376,15 @@ if __name__ == '__main__':
                 vmean_3_x, vmean_3_y, vmean_3_z, ratio_sigma_xx, ratio_sigma_yy, ratio_sigma_zz, 
                 path_save+"nohup.out"
             )
+
+        calibration_info_pos = calibration_by_N[int(N_particles)]
+        print("position calibration:", calibration_info_pos)
         
         h_frac_list[i_np, i_tag], Dim_frac_list[i_np, i_tag], diffu_eff_mean_list[i_np, i_tag], diffu_eff_median_list[i_np, i_tag] = \
             load_and_plot_pos_workflow(
-                path_load, snapshot_name, tag, N_particles, N_iter, is_by_generating, is_enable_plot_each=is_enable_plot_each
+                path_load, snapshot_name, tag, N_particles, N_iter, is_by_generating,
+                calibration_info_pos, is_enable_plot_each=is_enable_plot_each,
+                fractal_dimension_records=fractal_dimension_records
             )
 
         #: (2) a. pos_noised (noised14) by generating
@@ -258,7 +419,9 @@ if __name__ == '__main__':
         
         h_frac_list[i_np, i_tag], Dim_frac_list[i_np, i_tag], diffu_eff_mean_list[i_np, i_tag], diffu_eff_median_list[i_np, i_tag] = \
             load_and_plot_pos_workflow(
-                path_load, snapshot_name, tag, N_particles, N_iter, is_by_generating, is_enable_plot_each=is_enable_plot_each
+                path_load, snapshot_name, tag, N_particles, N_iter, is_by_generating,
+                calibration_info_pos, is_enable_plot_each=is_enable_plot_each,
+                fractal_dimension_records=fractal_dimension_records
             )
         
         #: (2) b. pos_noised (noised14) by generating, illustration
@@ -294,7 +457,9 @@ if __name__ == '__main__':
             
             h_frac_tmp, Dim_frac_tmp, diffu_mean_tmp, diffu_median_tmp = \
                 load_and_plot_pos_workflow(
-                    path_load, snapshot_name, tag, N_particles, N_iter, is_by_generating, is_enable_plot_each=is_enable_plot_each
+                    path_load, snapshot_name, tag, N_particles, N_iter, is_by_generating,
+                    calibration_info_pos, is_enable_plot_each=is_enable_plot_each,
+                    fractal_dimension_records=fractal_dimension_records
                 )
         
         #: other types
@@ -335,7 +500,9 @@ if __name__ == '__main__':
             
             h_frac_list[i_np, i_tag], Dim_frac_list[i_np, i_tag], diffu_eff_mean_list[i_np, i_tag], diffu_eff_median_list[i_np, i_tag] = \
                 load_and_plot_pos_workflow(
-                    path_load, snapshot_name, tag, N_particles, N_iter, is_by_generating, is_enable_plot_each=is_enable_plot_each
+                    path_load, snapshot_name, tag, N_particles, N_iter, is_by_generating,
+                    calibration_info_pos, is_enable_plot_each=is_enable_plot_each,
+                    fractal_dimension_records=fractal_dimension_records
                 )
             
             #: (3) b. pos_simulated by random selecting, illustration
@@ -375,7 +542,9 @@ if __name__ == '__main__':
                 
                 h_frac_tmp, Dim_frac_tmp, diffu_mean_tmp, diffu_median_tmp = \
                     load_and_plot_pos_workflow(
-                        path_load, snapshot_name, tag, N_particles, N_iter, is_by_generating, is_enable_plot_each=is_enable_plot_each
+                        path_load, snapshot_name, tag, N_particles, N_iter, is_by_generating,
+                        calibration_info_pos, is_enable_plot_each=is_enable_plot_each,
+                        fractal_dimension_records=fractal_dimension_records
                     )
             
             #: (4) pos_obs by random selecting
@@ -414,17 +583,41 @@ if __name__ == '__main__':
             
             h_frac_list[i_np, i_tag], Dim_frac_list[i_np, i_tag], diffu_eff_mean_list[i_np, i_tag], diffu_eff_median_list[i_np, i_tag] = \
                 load_and_plot_pos_workflow(
-                    path_load, snapshot_name, tag, N_particles, N_iter, is_by_generating, is_enable_plot_each=is_enable_plot_each
+                    path_load, snapshot_name, tag, N_particles, N_iter, is_by_generating,
+                    calibration_info_pos, is_enable_plot_each=is_enable_plot_each,
+                    fractal_dimension_records=fractal_dimension_records
                 )
         
         print("N_particles {}, end.".format(N_particles))
         # exit(0) #debug
-    
+
+    # Replot TeX-referenced historical samples directly from their saved raw
+    # files.  This deliberately bypasses the old random-resampling branch so
+    # data/samples_pos remains unchanged.
+    saved_paper_samples = [
+        ("type_noised_largenoise", "noised", 10000, 50, True),
+        ("type_obs", "obs", 40000, 0, False),
+        ("type_simulated", "simulated", 40000, 0, False),
+        ("type_simulated_unstable", "simulated", 40000, 0, False),
+    ]
+    for snapshot_name, tag, N_particles, N_iter, is_by_generating in saved_paper_samples:
+        print("Replot saved paper sample", snapshot_name, "N", N_particles)
+        load_and_plot_pos_workflow(
+            path_load, snapshot_name, tag, N_particles, N_iter, is_by_generating,
+            calibration_by_N[int(N_particles)],
+            is_enable_plot_each=is_enable_plot_each,
+            fractal_dimension_records=fractal_dimension_records,
+        )
+
+    dbc.update_fractal_dimension_figure_index(
+        fractal_dimension_records, FRACTAL_DIMENSION_INDEX_PATH, "position"
+    )
+
     #: plot eta_N
     diffueff_median_p_uniform = copy.deepcopy(diffu_eff_median_list[:, 0])
     diffueff_median_p_noised = copy.deepcopy(diffu_eff_median_list[:, 1])
-    diffueff_mean_p_uniform = copy.deepcopy(diffu_eff_median_list[:, 0])
-    diffueff_mean_p_noised = copy.deepcopy(diffu_eff_median_list[:, 1])
+    diffueff_mean_p_uniform = copy.deepcopy(diffu_eff_mean_list[:, 0])
+    diffueff_mean_p_noised = copy.deepcopy(diffu_eff_mean_list[:, 1])
 
     h_frac_mean_uniform = copy.deepcopy(np.mean(h_frac_list[:, 0]))
     h_frac_mean_noised = copy.deepcopy(np.mean(h_frac_list[:, 1]))
@@ -480,3 +673,8 @@ if __name__ == '__main__':
     zeta_versus_N = np.hstack((np.array([N_particles_list]).T, np.array([zeta_pos]).T))
     np.savetxt(path_save+"zeta_pos.txt", zeta_versus_N)
     ads.DEBUG_PRINT_V(1, zeta_versus_N, "zeta_pos")
+
+    dbc.zeta_linear_fitting_outer(
+        N_particles_list, zeta_pos, [1.0e11],
+        save_path=path_save, suffix="zeta_pos"
+    )

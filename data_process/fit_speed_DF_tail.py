@@ -243,35 +243,50 @@ def fit_and_plot_speed_df(v_grid, pdf_data, save_path):
     frac_pl = F_pl * g / F_comb
     frac_total = frac_G+frac_pl
 
-    fig, ax = plt.subplots(2, 1, figsize=(10, 10))
+    fig, ax = plt.subplots(1, 1, figsize=(10, 5))
     fontsize = 20
 
     # Subfigure 1: Plot each curve vs v.
-    ax[0].plot(v_grid, frac_G, 'g-', lw=2, label="Gaussian Core Fraction")
-    ax[0].plot(v_grid, frac_pl, 'b-', lw=2, label="Power-law Tail Fraction")
-    ax[0].plot(v_grid, frac_total, 'r-', lw=2, label="Total Fraction")
-    ax[0].plot(v_grid, g, 'k--', lw=2, label="Blending function, g(v)")
-    ax[0].set_xlabel("Speed, v", fontsize=fontsize)
-    ax[0].set_ylabel("Component Fraction", fontsize=fontsize)
-    ax[0].set_title("Component Fraction vs. v", fontsize=fontsize)
-    ax[0].tick_params(axis="both", which="major", labelsize=fontsize*0.8)
-    ax[0].legend(fontsize=fontsize*0.8)
-    ax[0].grid(True)
+    ax.plot(v_grid, frac_G, 'g-', lw=2, label="Gaussian Core Fraction")
+    ax.plot(v_grid, frac_pl, 'b-', lw=2, label="Power-law Tail Fraction")
+    # ax.plot(v_grid, frac_total, 'r-', lw=2, label="Total Fraction")
+    ax.plot(v_grid, g, 'k--', lw=2, label="Blending function, g(v)")
+    ax.set_xlabel(r"Speed, $v$ ($\mathrm{km\,s^{-1}}$)", fontsize=fontsize)
+    ax.set_ylabel("Component Fraction", fontsize=fontsize)
+    ax.set_title("Component Fraction vs. Speed", fontsize=fontsize)
+    ax.tick_params(axis="both", which="major", labelsize=fontsize*0.8)
+    ax.legend(fontsize=fontsize*0.8)
+    ax.grid(True)
 
-    # Subfigure 2: Plot DF vs v.
-    ax[1].plot(v_grid, pdf_data, 'ko', markersize=4, label='Data (KDE)')
-    ax[1].plot(v_grid, pdf_fit_Gaussian, 'g-', lw=2, label='Fitted Model of Gaussian')
-    ax[1].plot(v_grid, pdf_fit_powerlaw, 'b-', lw=2, label='Fitted Model of powerlaw')
-    ax[1].plot(v_grid, pdf_fit, 'r-', lw=2, label='Fitted Model of composite')
-    ax[1].set_xlabel("Speed, v", fontsize=fontsize)
-    ax[1].set_ylabel("PDF", fontsize=fontsize)
-    ax[1].set_title("Fitting of Speed DF", fontsize=fontsize)
-    ax[1].tick_params(axis="both", which="major", labelsize=fontsize*0.8)
-    ax[1].legend(fontsize=fontsize*0.8)
-    ax[1].grid(True)
+    # fig, ax = plt.subplots(2, 1, figsize=(10, 10))
+    # fontsize = 20
+
+    # # Subfigure 1: Plot each curve vs v.
+    # ax[0].plot(v_grid, frac_G, 'g-', lw=2, label="Gaussian Core Fraction")
+    # ax[0].plot(v_grid, frac_pl, 'b-', lw=2, label="Power-law Tail Fraction")
+    # # ax[0].plot(v_grid, frac_total, 'r-', lw=2, label="Total Fraction")
+    # ax[0].plot(v_grid, g, 'k--', lw=2, label="Blending function, g(v)")
+    # ax[0].set_xlabel("Speed, v", fontsize=fontsize)
+    # ax[0].set_ylabel("Component Fraction", fontsize=fontsize)
+    # ax[0].set_title("Component Fraction vs. v", fontsize=fontsize)
+    # ax[0].tick_params(axis="both", which="major", labelsize=fontsize*0.8)
+    # ax[0].legend(fontsize=fontsize*0.8)
+    # ax[0].grid(True)
+
+    # # Subfigure 2: Plot DF vs v.
+    # ax[1].plot(v_grid, pdf_data, 'ko', markersize=4, label='Data (KDE)')
+    # ax[1].plot(v_grid, pdf_fit_Gaussian, 'g-', lw=2, label='Fitted Model of Gaussian')
+    # ax[1].plot(v_grid, pdf_fit_powerlaw, 'b-', lw=2, label='Fitted Model of powerlaw')
+    # ax[1].plot(v_grid, pdf_fit, 'r-', lw=2, label='Fitted Model of composite')
+    # ax[1].set_xlabel("Speed, v", fontsize=fontsize)
+    # ax[1].set_ylabel("PDF", fontsize=fontsize)
+    # ax[1].set_title("Fitting of Speed DF", fontsize=fontsize)
+    # ax[1].tick_params(axis="both", which="major", labelsize=fontsize*0.8)
+    # ax[1].legend(fontsize=fontsize*0.8)
+    # ax[1].grid(True)
 
     plt.tight_layout()
-    plt.savefig(save_path+"fitted_velocity_DF.eps", format="eps", bbox_inches='tight')
+    plt.savefig(save_path+"fitted_velocity_DF.pdf", format="pdf", bbox_inches='tight')
     # plt.show()
     plt.close()
     print("Plot fitted DF to:", save_path)

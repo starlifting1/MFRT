@@ -18,7 +18,7 @@ from sklearn.ensemble import RandomForestRegressor
 from gplearn.genetic import SymbolicRegressor
 
 def sksr(xdata, ydata):
-    # Assuming you have your data stored in arrays h_values and log_f_values
+    # Assuming data stored in arrays h_values and log_f_values
     h_values, log_f_values = xdata, ydata
 
     # Concatenate x_values and s_values into a single input array

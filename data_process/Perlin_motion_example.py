@@ -2,6 +2,8 @@
 # -*- coding:utf-8 -*-
 
 import numpy as np
+import matplotlib.pyplot as plt
+from pathlib import Path
 from noise import pnoise3
 
 
@@ -55,14 +57,40 @@ def Perlin_motion(positions, scale=0.1, octaves=4, step_size=0.5):
     return new_positions
 
 if __name__ == "__main__":
+    project_dir = Path(__file__).resolve().parents[1]
+    sample_dir = project_dir / "data" / "samples_pos"
+    output_path = (
+        project_dir / "data" / "pics_standalone"
+        / "Perlin_motion_xy_pos_uniformcompare_noise_10000.pdf"
+    )
+    initial_positions = np.loadtxt(sample_dir / "pos_noised0_N10000.txt")[:, :3]
+    modified_positions = np.loadtxt(sample_dir / "pos_noised14_N10000.txt")[:, :3]
 
-    N_particles = 10000
-    rs = 1.
-    new_positions = np.random.uniform(0, rs*2., (N_particles, 3))
-    
-    N_iter = 14
-    scale = 0.1
-    step_size = 2.
-    for i in range(N_iter):
-        new_positions = Perlin_motion(new_positions, scale=scale, octaves=4, step_size=step_size)
-    print("np.shape(new_positions): {}".format(np.shape(new_positions)))
+    label_fontsize = 22
+    tick_fontsize = 20
+    title_fontsize = 22
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
+    ax1.scatter(
+        initial_positions[:, 0], initial_positions[:, 1],
+        c="blue", s=5, alpha=0.5, rasterized=True,
+    )
+    ax1.set_title("Initial homogeneous sample", fontsize=title_fontsize)
+    ax1.set_xlabel(r"$x$ ($\mathrm{kpc}$)", fontsize=label_fontsize)
+    ax1.set_ylabel(r"$y$ ($\mathrm{kpc}$)", fontsize=label_fontsize)
+    ax1.tick_params(axis="both", labelsize=tick_fontsize)
+    ax1.grid(True)
+
+    ax2.scatter(
+        modified_positions[:, 0], modified_positions[:, 1],
+        c="red", s=5, alpha=0.5, rasterized=True,
+    )
+    ax2.set_title("Perlin-modified sample", fontsize=title_fontsize)
+    ax2.set_xlabel(r"$x$ ($\mathrm{kpc}$)", fontsize=label_fontsize)
+    ax2.set_ylabel(r"$y$ ($\mathrm{kpc}$)", fontsize=label_fontsize)
+    ax2.tick_params(axis="both", labelsize=tick_fontsize)
+    ax2.grid(True)
+
+    fig.tight_layout()
+    fig.savefig(output_path, format="pdf", dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    print("Saved", output_path)

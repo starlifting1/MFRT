@@ -14,10 +14,15 @@ import diffu_basic as dbc
 
 
 
-def plot_compare_tree(filename, suffix="suffix"):
+def plot_compare_tree(filename, suffix="suffix", calibration_info=None):
     data = np.loadtxt(filename)
     Diffu_direct = data[:, 1]
     Diffu_tree = data[:, 2]
+    if calibration_info is not None:
+        Diffu_direct = dbc.apply_diffusion_calibration(
+            Diffu_direct, calibration_info
+        )
+        Diffu_tree = dbc.apply_diffusion_calibration(Diffu_tree, calibration_info)
 
     indices = np.arange(len(Diffu_direct))
     Diffu_direct = Diffu_direct[np.argsort(Diffu_direct)]
@@ -36,24 +41,29 @@ def plot_compare_tree(filename, suffix="suffix"):
     plt.plot(indices, Diffu_direct, "-", label="direct summation", lw=pointsize)
     plt.plot(indices, Diffu_tree, "--", label="tree", lw=pointsize)
 
-    plt.legend(fontsize=fontsize*0.6, loc=0)
+    plt.legend(fontsize=fontsize*0.75, loc=0)
     # plt.xscale("log")
     plt.yscale("log")
     # plt.title(r"diffusion coefficient DF on position space", fontsize=fontsize)
     plt.xlabel(r"Particles indices $i$", fontsize=fontsize)
-    plt.ylabel(r"Diffusion $D_\mathrm{main}$, $\mathrm{(km/s)^3/kpc}$", fontsize=fontsize)
-    plt.tick_params(axis="both", which="major", labelsize=fontsize*0.6)
+    plt.ylabel(
+        r"Diffusion $D_\mathrm{pos}^{\mathrm{calibration}}$ $[(\mathrm{km\,s^{-1}})^3\,\mathrm{kpc^{-1}}]$",
+        fontsize=fontsize,
+    )
+    plt.tick_params(axis="both", which="major", labelsize=fontsize*0.75)
     
     plt.tight_layout()
-    plt.savefig("../data/examples_pos/diffur_compare_tree_{}.eps".format(suffix), format="eps", bbox_inches='tight')
+    plt.savefig("../data/examples_pos/diffur_compare_tree_{}.pdf".format(suffix), format="pdf", bbox_inches='tight')
     plt.close()
     
     print("Plot {}, done.".format(suffix))
     return 0
 
-def plot_diffur(filename, Diffu_0, suffix="suffix"):
+def plot_diffur(filename, Diffu_0, suffix="suffix", calibration_info=None):
     data = np.loadtxt(filename)
     Diffu_data = data[:, 2]
+    if calibration_info is not None:
+        Diffu_data = dbc.apply_diffusion_calibration(Diffu_data, calibration_info)
     # pers = np.percentile(Diffu_data, q=[1., 10., 50., 90., 99.])
     # mask = (Diffu_data>pers[0]) & (Diffu_data<pers[-1]) #1., 99.
     # indices = np.where(mask)[0]
@@ -81,18 +91,18 @@ def plot_diffur(filename, Diffu_0, suffix="suffix"):
     plt.grid(True)
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2.0
     plt.plot(bin_centers, normalized_distribution, 'o-', label='Normalized Distribution', color='b', lw=pointsize)
-    plt.plot([mean_val, mean_val], [0., np.max(normalized_distribution)], '--', label='Diffu_mean = {:.4f}'.format(mean_val), color='k', lw=pointsize)
-    plt.plot([median_val, median_val], [0., np.max(normalized_distribution)], '-.', label='Diffu_median = {:.4f}'.format(median_val), color='k', lw=pointsize)
+    plt.plot([mean_val, mean_val], [0., np.max(normalized_distribution)], '--', label='Mean = {:.4f}'.format(mean_val), color='k', lw=pointsize)
+    plt.plot([median_val, median_val], [0., np.max(normalized_distribution)], '-.', label='Median = {:.4f}'.format(median_val), color='k', lw=pointsize)
     if Diffu_0 is not None:
-        plt.plot([Diffu_0, Diffu_0], [0., np.max(normalized_distribution)], label='Diffu_0 = {:.4f}'.format(Diffu_0), color='k', lw=pointsize)
+        plt.plot([Diffu_0, Diffu_0], [0., np.max(normalized_distribution)], label='Chandrasekhar--BT classical reference = {:.4f}'.format(Diffu_0), color='k', lw=pointsize)
     
     plt.xscale("log")
     plt.yscale("log")
     plt.title(r"histogram of main diffusion coefficient of each particle", fontsize=fontsize)
-    plt.xlabel(r"diffusion, $D_\mathrm{position, main}$ ($\mathrm{(km/s)^3/kpc}$)", fontsize=fontsize)
-    plt.ylabel(r"distribution, $f$ ($\mathrm{kpc/(km/s)^3}$)", fontsize=fontsize)
+    plt.xlabel(r"Diffusion $D_\mathrm{pos}^{\mathrm{calibration}}$ ($\mathrm{km\,s^{-1}})^3\,\mathrm{kpc^{-1}}$", fontsize=fontsize)
+    plt.ylabel(r"distribution $f$ $\mathrm{kpc}\,(\mathrm{km\,s^{-1}})^{-3}$", fontsize=fontsize)
     plt.legend(fontsize=fontsize*0.6, loc=0)
-    plt.savefig("../data/examples_pos/diffur_DF_{}.eps".format(suffix), format="eps", bbox_inches='tight')
+    plt.savefig("../data/examples_pos/diffur_DF_{}.pdf".format(suffix), format="pdf", bbox_inches='tight')
     plt.close()
     
     print("Plot {}, done.".format(suffix))
@@ -143,8 +153,8 @@ def plot_normalized_df_from_percentile(filename, Diffu_represent, suffix):
 
     # Title and labels
     plt.title(r"Histogram of main diffusion coefficient of each particle", fontsize=fontsize)
-    plt.xlabel(r"Diffusion, $D_\mathrm{position, main}$ ($\mathrm{(km/s)^3/kpc}$)", fontsize=fontsize)
-    plt.ylabel(r"Distribution, $f$ ($\mathrm{kpc/(km/s)^3}$)", fontsize=fontsize)
+    plt.xlabel(r"Diffusion $D_\mathrm{position, main}$ ($\mathrm{km\,s^{-1}})^3\,\mathrm{kpc^{-1}}$", fontsize=fontsize)
+    plt.ylabel(r"Distribution $f$ $\mathrm{kpc}\,(\mathrm{km\,s^{-1}})^{-3}$", fontsize=fontsize)
 
     # Legend and ticks
     plt.legend(fontsize=fontsize * 0.6, loc=0)
@@ -152,7 +162,7 @@ def plot_normalized_df_from_percentile(filename, Diffu_represent, suffix):
 
     # Layout and save the plot
     plt.tight_layout()
-    plt.savefig("../data/examples_pos/diffur_percentile_{}.eps".format(suffix), format="eps", bbox_inches='tight')
+    plt.savefig("../data/examples_pos/diffur_percentile_{}.pdf".format(suffix), format="pdf", bbox_inches='tight')
     plt.close()
     print("Saved fig of diffur_percentile.")
     return 0
@@ -242,7 +252,11 @@ def plot_relaxation_time_with_N_and_dim_pos(
             eta_diffu_list[i] = dbc.eta_ralaxaiton_time_ratio(diffur_list[i], R0, v0)
         # ads.DEBUG_PRINT_V(1, diffur_list, eta_diffu_list, "diffur")
         # plt.plot(N_list, eta_IR2_list, "-.", label="eta_IR2, Dim_frac={:.2f}".format(d), color=color[pos_type_name], lw=pointsize*0.5)
-        plt.scatter(N_list, eta_diffu_list, label="by median value of {}".format(pos_type_name), color=color[pos_type_name], s=pointsize*60., marker="*")
+        display_name = {
+            "pos_uniform": "homogeneous random reference",
+            "pos_uniform_noise": "inhomogeneous sample",
+        }.get(pos_type_name, pos_type_name)
+        plt.scatter(N_list, eta_diffu_list, label="by median value of {}".format(display_name), color=color[pos_type_name], s=pointsize*60., marker="*")
     
     dldl = [diffur_uniform_meanvalue_list, diffur_noised_meanvalue_list, ]
     for dl in dldl:
@@ -260,7 +274,11 @@ def plot_relaxation_time_with_N_and_dim_pos(
             eta_diffu_list[i] = dbc.eta_ralaxaiton_time_ratio(diffur_list[i], R0, v0)
         # ads.DEBUG_PRINT_V(1, diffur_list, eta_diffu_list, "diffur")
         # plt.plot(N_list, eta_IR2_list, "-.", label="eta_IR2, Dim_frac={:.2f}".format(d), color=color[pos_type_name], lw=pointsize*0.5)
-        plt.scatter(N_list, eta_diffu_list, label="by mean value of {}".format(pos_type_name), color=color[pos_type_name], s=pointsize*60., marker="+")
+        display_name = {
+            "pos_uniform": "homogeneous random reference",
+            "pos_uniform_noise": "inhomogeneous sample",
+        }.get(pos_type_name, pos_type_name)
+        plt.scatter(N_list, eta_diffu_list, label="by mean value of {}".format(display_name), color=color[pos_type_name], s=pointsize*60., marker="+")
     
     plt.xscale("log")
     plt.yscale("log")
@@ -271,7 +289,7 @@ def plot_relaxation_time_with_N_and_dim_pos(
     plt.tick_params(which='major', length=0, labelsize=fontsize*0.8) #size of the number characters
     plt.tight_layout()
 
-    plt.savefig("../data/examples_pos/relaxation_time_N_and_dim_{}.eps".format(suffix), format="eps", bbox_inches='tight')
+    plt.savefig("../data/examples_pos/relaxation_time_N_and_dim_{}.pdf".format(suffix), format="pdf", bbox_inches='tight')
     plt.close()
     print("Saved fig of relaxation_time_with_N_and_dim_pos.")
     return 0
@@ -430,7 +448,7 @@ def plot_velocity_speed_distribution(
     plt.grid(True)
     plt.legend()
     plt.tight_layout()
-    plt.savefig(save_path+"velocity_DF_speed_compare.eps", format="eps", bbox_inches='tight')
+    plt.savefig(save_path+"velocity_DF_speed_compare.pdf", format="pdf", bbox_inches='tight')
     if is_show:
         plt.show()
     if debug:
@@ -543,7 +561,7 @@ def plot_velocity_DF_contour_compare(
         cbar.ax.tick_params(labelsize=fontsize)
 
         fig.subplots_adjust(left=0.05, right=0.9, top=0.93, bottom=0.07, wspace=0.3, hspace=0.4)
-        plt.savefig(save_path + f"velocity_DF_contour_compare_"+labels[idx]+".eps", format="eps", bbox_inches='tight')
+        plt.savefig(save_path + f"velocity_DF_contour_compare_"+labels[idx]+".pdf", format="pdf", bbox_inches='tight')
         if is_show:
             plt.show()
         plt.close()
@@ -557,12 +575,51 @@ if __name__ == '__main__':
     #### samples for pos
     ## 1. compare_tree
     suffix = "noised14_N100000"
+    N_particles = 100000
+    M_total = dbc.M_total_gal_1e10MSun
+    R0 = 50.0
+    v0 = np.sqrt(dbc.G*M_total/dbc.frac_mass/R0)
+    filename_uniform_statistics = (
+        "../data/samples_simulated/"
+        "snapshot_fractal_Diffustatistics_read0_noised0_N100000.txt"
+    )
+    uniform_statistics = np.loadtxt(filename_uniform_statistics)
+    uniform_median_raw = uniform_statistics[3]
+    calibration_info = dbc.build_classical_limit_calibration(
+        N_particles, M_total, R0, v0, uniform_median_raw, pos_or_vel="pos"
+    )
+    uniform_median_calibration = float(dbc.apply_diffusion_calibration(
+        uniform_median_raw, calibration_info
+    ))
+    if not np.isclose(
+        uniform_median_calibration, calibration_info["D_classical"],
+        rtol=1.0e-12, atol=0.0
+    ):
+        raise ValueError("tree-comparison calibration reference check failed")
+    np.savetxt(
+        "../data/examples_pos/calibration_pos_tree_comparison.txt",
+        np.array([[
+            N_particles, R0, calibration_info["D_classical"],
+            uniform_median_raw, calibration_info["formula_correction"],
+            calibration_info["C_calibration"], calibration_info["total_factor"],
+            uniform_median_calibration,
+        ]]),
+        header=(
+            "N R0 D_classical median_pos_uniform_raw GXX_correction_factor "
+            "C_r_after_GXX total_position_calibration_factor "
+            "median_pos_uniform_calibration"
+        ),
+        fmt="%.17e",
+    )
     filename = "../data/samples_simulated/snapshot_compare_tree_Diffur_read0_{}.txt".format(suffix)
-    plot_compare_tree(filename, suffix)
+    plot_compare_tree(filename, suffix, calibration_info=calibration_info)
     filename_Diffu_represent = "../data/samples_simulated/snapshot_fractal_Diffustatistics_read0_noised14_N100000.txt"
     Diffu_represent = np.loadtxt(filename_Diffu_represent)
     print(Diffu_represent)
-    plot_diffur(filename, Diffu_represent[1], suffix)
+    plot_diffur(
+        filename, calibration_info["D_classical"], suffix,
+        calibration_info=calibration_info
+    )
 
     # ## 2. diffu_simulated
     # suffix = "snapshot_080_N1000000"

@@ -1757,10 +1757,14 @@ def plot_frac_dim_total(pos_info_store, suffix="suffix"):
     plt.figure(figsize=figsize, dpi=dpi)
     plt.grid(True)
     for j in np.arange(N_dimlb_plot):
+        display_name = {
+            "pos_uniform": "homogeneous random reference",
+            "pos_uniform_noise": "inhomogeneous sample",
+        }.get(pos_type_name[j], pos_type_name[j])
         plt.plot(N_particles_arr, eta_N_arr_count[j], label="eta_N, Dim_frac={:.2f}".format(Dim_frac_lb[j]), color=color[pos_type_name[j]], lw=pointsize)
         # plt.scatter(N_particles_file[j], eta_N[j], label="eta_IR2", color=color[pos_type_name[j]], s=pointsize*60., marker="*")
         # plt.scatter(N_particles_file[j], (eta_IR2[j]+eta_N[j])/2., label="eta_mean", color=color[pos_type_name[j]], s=pointsize*60., marker="x") #debug
-        plt.scatter(N_particles_file[j], eta_diffu[j], label="eta_diffu of {}".format(pos_type_name[j]), color=color[pos_type_name[j]], s=pointsize*60., marker=".")
+        plt.scatter(N_particles_file[j], eta_diffu[j], label="eta_diffu of {}".format(display_name), color=color[pos_type_name[j]], s=pointsize*60., marker=".")
     plt.xscale("log")
     plt.yscale("log")
     plt.title(r"eta_relax versus N", fontsize=fontsize)
