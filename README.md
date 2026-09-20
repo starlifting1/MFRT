@@ -14,7 +14,7 @@ Author: Jianyu Gu et al.
 
 Environment: Ubuntu 20.04 or higher
 
-Dependencies: `gcc` `g++` (c++17 or higher) `gsl` `eigen3` `openmpi` `python3`
+Dependencies: `GNU Make`; `G++` (C++17 with OpenMP support), `Eigen3`; `Python 3`, `Astropy`, `Matplotlib`, `noise`, `NumPy`, `pandas`, `scikit-learn`, `SciPy`, `tikzplotlib`, and `vegas`.
 
 License: GPL-3.0
 

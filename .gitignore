@@ -7,7 +7,6 @@
 *.npz
 *.txt
 !LICENSE.txt
-!requirements*.txt
 *.pdf
 *.eps
 *.png
